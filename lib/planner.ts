@@ -11,6 +11,20 @@ interface PlannerState {
   assignmentCounts: Map<string, number>;
   lastAssignedDateIndex: Map<string, number>;
   mdCounts: Map<string, number>;
+  // name -> month ("2026-09") -> assignments in that month
+  monthlyAssignmentCounts: Map<string, Map<string, number>>;
+}
+
+function monthOf(date: string): string {
+  return date.slice(0, 7);
+}
+
+function monthlyCount(
+  state: PlannerState,
+  name: string,
+  date: string
+): number {
+  return state.monthlyAssignmentCounts.get(name)?.get(monthOf(date)) ?? 0;
 }
 
 interface PlannerResult {
@@ -44,7 +58,14 @@ function candidateCost(
   const lastIndex = state.lastAssignedDateIndex.get(participant.name);
   const maybePenalty = availability === "maybe" ? 4 : 0;
   const consecutivePenalty = lastIndex === dateIndex - 1 ? 3 : 0;
-  return count * 10 + maybePenalty + consecutivePenalty;
+  // Strong (but not absolute) penalty once someone reached their personal
+  // per-month wish - they are only picked if nobody else can fill the slot.
+  const wishPenalty =
+    participant.max_per_month != null &&
+    monthlyCount(state, participant.name, date) >= participant.max_per_month
+      ? 50
+      : 0;
+  return count * 10 + maybePenalty + consecutivePenalty + wishPenalty;
 }
 
 function pickCandidate(
@@ -99,9 +120,22 @@ function recordAssignment(
     (state.assignmentCounts.get(participant.name) ?? 0) + 1
   );
   state.lastAssignedDateIndex.set(participant.name, dateIndex);
+  const monthCounts =
+    state.monthlyAssignmentCounts.get(participant.name) ?? new Map<string, number>();
+  const newMonthCount = (monthCounts.get(monthOf(date)) ?? 0) + 1;
+  monthCounts.set(monthOf(date), newMonthCount);
+  state.monthlyAssignmentCounts.set(participant.name, monthCounts);
   if (participant.availability[date] === "maybe") {
     warnings.push(
       `${formatDateGerman(date)}: ${participant.name} (${roleLabel}) ist nur «vielleicht» verfügbar`
+    );
+  }
+  if (
+    participant.max_per_month != null &&
+    newMonthCount > participant.max_per_month
+  ) {
+    warnings.push(
+      `${formatDateGerman(date)}: ${participant.name} (${roleLabel}) ist öfter eingeteilt als gewünscht (max. ${participant.max_per_month}×/Monat)`
     );
   }
 }
@@ -115,6 +149,7 @@ export function generatePlan(
     assignmentCounts: new Map(),
     lastAssignedDateIndex: new Map(),
     mdCounts: new Map(),
+    monthlyAssignmentCounts: new Map(),
   };
   const warnings: string[] = [];
   const plan: Plan = Object.fromEntries(

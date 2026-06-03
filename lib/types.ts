@@ -27,6 +27,8 @@ export interface Participant {
   name: string;
   roles: Role[];
   can_md: boolean;
+  // Wish: at most this many assignments per calendar month (null = no limit).
+  max_per_month: number | null;
   availability: Record<string, Availability>; // date -> availability
 }
 

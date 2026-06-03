@@ -73,6 +73,7 @@ export async function POST(
       name: participant.name,
       roles: participant.roles,
       can_md: participant.can_md,
+      max_per_month: participant.max_per_month,
       availability: participant.availability,
     })),
   });

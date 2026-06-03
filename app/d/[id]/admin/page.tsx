@@ -15,6 +15,7 @@ interface AdminParticipant {
   name: string;
   roles: Role[];
   can_md: boolean;
+  max_per_month: number | null;
   availability: Record<string, Availability>;
 }
 
@@ -253,8 +254,11 @@ function PlanEditor({
   return (
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">Plan</h2>
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[1250px] text-sm">
+      {/* Full-bleed: the plan table uses the entire viewport width so all
+          role columns stay visible. */}
+      <div className="relative left-1/2 w-screen -translate-x-1/2 px-4 sm:px-6">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[1250px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <th className="px-3 py-3 font-semibold">Datum</th>
@@ -286,7 +290,8 @@ function PlanEditor({
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
         <span className="flex items-center gap-1.5">
@@ -606,6 +611,11 @@ function AvailabilityMatrix({
                   {participant.can_md && (
                     <span className="ml-1 rounded bg-indigo-100 px-1 text-xs text-indigo-700">
                       MD
+                    </span>
+                  )}
+                  {participant.max_per_month != null && (
+                    <span className="ml-1 rounded bg-slate-100 px-1 text-xs text-slate-600">
+                      max. {participant.max_per_month}×/Mt.
                     </span>
                   )}
                 </td>

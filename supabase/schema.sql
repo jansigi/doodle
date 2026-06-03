@@ -17,6 +17,7 @@ create table participants (
   name text not null,
   roles jsonb not null,
   can_md boolean not null default false,
+  max_per_month integer,
   availability jsonb not null default '{}',
   created_at timestamptz not null default now(),
   unique (doodle_id, name)

@@ -15,7 +15,7 @@ export async function GET(
   const supabase = createServerSupabase();
   const { data: participant } = await supabase
     .from("participants")
-    .select("name, roles, can_md, availability")
+    .select("name, roles, can_md, max_per_month, availability")
     .eq("doodle_id", params.id)
     .ilike("name", name)
     .maybeSingle();
@@ -37,6 +37,12 @@ export async function POST(
   const canMd: boolean =
     Boolean(body.canMd) &&
     roles.some((role: Role) => INSTRUMENT_ROLES.includes(role));
+  const maxPerMonth: number | null =
+    Number.isInteger(body.maxPerMonth) &&
+    body.maxPerMonth >= 1 &&
+    body.maxPerMonth <= 10
+      ? body.maxPerMonth
+      : null;
   const availability: Record<string, Availability> = body.availability ?? {};
 
   if (!name)
@@ -78,6 +84,7 @@ export async function POST(
       name,
       roles,
       can_md: canMd,
+      max_per_month: maxPerMonth,
       availability: cleanedAvailability,
     },
     { onConflict: "doodle_id,name" }

@@ -39,6 +39,7 @@ export default function ParticipantPage() {
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [canMd, setCanMd] = useState(false);
+  const [maxPerMonth, setMaxPerMonth] = useState<number | null>(null);
   const [availability, setAvailability] = useState<
     Record<string, Availability>
   >({});
@@ -69,12 +70,14 @@ export default function ParticipantPage() {
       setName(result.participant.name);
       setRoles(result.participant.roles);
       setCanMd(result.participant.can_md);
+      setMaxPerMonth(result.participant.max_per_month ?? null);
       setAvailability(result.participant.availability);
       setEntryLoaded(true);
     } else {
       setName(trimmedName);
       setRoles([]);
       setCanMd(false);
+      setMaxPerMonth(null);
       setAvailability({});
       setEntryLoaded(false);
     }
@@ -124,7 +127,7 @@ export default function ParticipantPage() {
     const response = await fetch(`/api/doodles/${id}/participants`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, roles, canMd, availability }),
+      body: JSON.stringify({ name, roles, canMd, maxPerMonth, availability }),
     });
     const result = await response.json();
     setSubmitting(false);
@@ -240,6 +243,42 @@ export default function ParticipantPage() {
             Ich kann MD (Musical Director) übernehmen
           </label>
         )}
+      </section>
+
+      <section className="space-y-2">
+        <p className="font-medium">
+          Wie oft pro Monat möchtest du höchstens eingeteilt werden?
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 3].map((count) => (
+            <button
+              key={count}
+              type="button"
+              onClick={() => setMaxPerMonth(count)}
+              className={`rounded-full border px-4 py-1.5 text-sm transition ${
+                maxPerMonth === count
+                  ? "border-indigo-600 bg-indigo-600 text-white"
+                  : "border-slate-300 bg-white hover:border-indigo-400"
+              }`}
+            >
+              {count}×
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setMaxPerMonth(null)}
+            className={`rounded-full border px-4 py-1.5 text-sm transition ${
+              maxPerMonth === null
+                ? "border-indigo-600 bg-indigo-600 text-white"
+                : "border-slate-300 bg-white hover:border-indigo-400"
+            }`}
+          >
+            So oft wie nötig
+          </button>
+        </div>
+        <p className="text-sm text-slate-500">
+          Dein Wunsch wird bei der Planung berücksichtigt, wo es möglich ist.
+        </p>
       </section>
 
       <section className="space-y-2">
