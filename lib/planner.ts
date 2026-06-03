@@ -205,7 +205,60 @@ export function generatePlan(
     });
   });
 
-  // Pass 3: pick a musical director per date. Only instrumentalists qualify,
+  // Pass 3: A-Guitar (optional). It is the only instrument that may be
+  // combined with a singing role, so prefer a singer of that date who also
+  // plays acoustic guitar; otherwise add a free person who answered "yes".
+  const participantsByNameForAguitar = new Map(
+    participants.map((participant) => [participant.name, participant])
+  );
+  sortedDates.forEach((date, dateIndex) => {
+    const assignment = plan[date];
+    const singers = [
+      assignment.leader,
+      assignment.coordinator,
+      ...assignment.vocals,
+    ].filter((name): name is string => name !== null);
+    const singingGuitarist = singers
+      .map((name) => participantsByNameForAguitar.get(name))
+      .filter(
+        (participant): participant is Participant =>
+          participant !== undefined && participant.roles.includes("aguitar")
+      )
+      .reduce<Participant | null>((best, candidate) => {
+        if (best === null) return candidate;
+        const bestCount = state.assignmentCounts.get(best.name) ?? 0;
+        const candidateCount =
+          state.assignmentCounts.get(candidate.name) ?? 0;
+        return candidateCount < bestCount ? candidate : best;
+      }, null);
+    if (singingGuitarist) {
+      // Doubles with their singing slot - no additional load is counted.
+      assignment.aguitar = singingGuitarist.name;
+      return;
+    }
+    const standalone = pickCandidate(
+      participants,
+      "aguitar",
+      date,
+      dateIndex,
+      new Set(assignedNames(assignment)),
+      state,
+      { yesOnly: true }
+    );
+    if (standalone) {
+      assignment.aguitar = standalone.name;
+      recordAssignment(
+        standalone,
+        date,
+        dateIndex,
+        state,
+        warnings,
+        ROLE_LABELS.aguitar
+      );
+    }
+  });
+
+  // Pass 4: pick a musical director per date. Only instrumentalists qualify,
   // so candidates are the people assigned to an instrument slot that date.
   const participantsByName = new Map(
     participants.map((participant) => [participant.name, participant])
@@ -250,6 +303,7 @@ export function generatePlan(
       vocal: assignment.vocals.length,
       bass: assignment.bass ? 1 : 0,
       egit: assignment.egit.length,
+      aguitar: assignment.aguitar ? 1 : 0,
       drums: assignment.drums ? 1 : 0,
       keys: assignment.keys ? 1 : 0,
     };

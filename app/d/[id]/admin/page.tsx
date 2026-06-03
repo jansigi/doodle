@@ -254,7 +254,7 @@ function PlanEditor({
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">Plan</h2>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[1100px] text-sm">
+        <table className="w-full min-w-[1250px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <th className="px-3 py-3 font-semibold">Datum</th>
@@ -265,6 +265,7 @@ function PlanEditor({
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.vocal}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.bass}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.egit}</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.aguitar}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.drums}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.keys}</th>
               <th className="px-3 py-3 font-semibold">MD</th>
@@ -326,8 +327,9 @@ function PlanRow({
     ...assignment.vocals,
     ...assignment.egit,
   ].filter((name): name is string => name !== null);
+  const aguitarName = assignment.aguitar ?? null;
 
-  // Only people on an instrument slot can be MD.
+  // Only people on an instrument slot can be MD (A-Guitar does not qualify).
   const instrumentNames = [
     assignment.bass,
     assignment.drums,
@@ -340,13 +342,22 @@ function PlanRow({
   );
 
   function singleSelect(role: "leader" | "coordinator" | "bass" | "drums" | "keys") {
+    // A-Guitar may double with a singing role, but never with another
+    // instrument - so the acoustic guitarist is blocked for instrument slots.
+    const aguitarBlocked =
+      role === "bass" || role === "drums" || role === "keys"
+        ? [aguitarName].filter((name): name is string => name !== null)
+        : [];
     return (
       <PersonSelect
         date={date}
         role={role}
         value={assignment[role]}
         participants={participants}
-        excluded={assigned.filter((name) => name !== assignment[role])}
+        excluded={[
+          ...assigned.filter((name) => name !== assignment[role]),
+          ...aguitarBlocked,
+        ]}
         onSelect={(name) => {
           const updated = { ...assignment, [role]: name };
           if (assignment[role] === assignment.md && name !== assignment[role])
@@ -359,6 +370,10 @@ function PlanRow({
 
   function multiSelect(role: "vocal" | "egit", values: string[]) {
     const slotCount = Math.max(LINEUP_TARGETS[role].max, values.length);
+    const aguitarBlocked =
+      role === "egit"
+        ? [aguitarName].filter((name): name is string => name !== null)
+        : [];
     return (
       <div className="space-y-1">
         {Array.from({ length: slotCount }).map((_, index) => (
@@ -368,7 +383,10 @@ function PlanRow({
             role={role}
             value={values[index] ?? null}
             participants={participants}
-            excluded={assigned.filter((name) => name !== values[index])}
+            excluded={[
+              ...assigned.filter((name) => name !== values[index]),
+              ...aguitarBlocked,
+            ]}
             onSelect={(name) => {
               const updatedValues = [...values];
               if (name === null) updatedValues.splice(index, 1);
@@ -412,6 +430,16 @@ function PlanRow({
       <td className="px-3 py-2">{multiSelect("vocal", assignment.vocals)}</td>
       <td className="px-3 py-2">{singleSelect("bass")}</td>
       <td className="px-3 py-2">{multiSelect("egit", assignment.egit)}</td>
+      <td className="px-3 py-2">
+        <PersonSelect
+          date={date}
+          role="aguitar"
+          value={aguitarName}
+          participants={participants}
+          excluded={instrumentNames}
+          onSelect={(name) => onChange({ ...assignment, aguitar: name })}
+        />
+      </td>
       <td className="px-3 py-2">{singleSelect("drums")}</td>
       <td className="px-3 py-2">{singleSelect("keys")}</td>
       <td className="px-3 py-2">

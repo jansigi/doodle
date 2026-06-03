@@ -30,6 +30,7 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
       listWithMdTag(assignment.vocals, assignment.md),
       withMdTag(assignment.bass, assignment.md),
       listWithMdTag(assignment.egit, assignment.md),
+      withMdTag(assignment.aguitar ?? null, assignment.md),
       withMdTag(assignment.drums, assignment.md),
       withMdTag(assignment.keys, assignment.md),
     ];
@@ -45,6 +46,7 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
         "Vocals",
         "Bass",
         "E-Gitarre",
+        "A-Gitarre",
         "Drums",
         "Keys",
       ],

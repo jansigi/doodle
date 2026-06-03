@@ -4,6 +4,7 @@ export type Role =
   | "vocal"
   | "bass"
   | "egit"
+  | "aguitar"
   | "drums"
   | "keys";
 
@@ -35,6 +36,9 @@ export interface DateAssignment {
   vocals: string[];
   bass: string | null;
   egit: string[];
+  // A-Guitar is the only instrument that can be combined with a singing role:
+  // the assigned person may simultaneously be leader/coordinator/vocal.
+  aguitar: string | null;
   drums: string | null;
   keys: string | null;
   md: string | null; // name of the musical director (one of the assigned people)
@@ -49,6 +53,7 @@ export function emptyDateAssignment(): DateAssignment {
     vocals: [],
     bass: null,
     egit: [],
+    aguitar: null,
     drums: null,
     keys: null,
     md: null,
