@@ -10,7 +10,6 @@ interface PublicDoodle {
   title: string;
   status: "open" | "closed";
   dates: string[];
-  participantNames: string[];
 }
 
 const AVAILABILITY_OPTIONS: Array<{
@@ -28,7 +27,11 @@ export default function ParticipantPage() {
   const [doodle, setDoodle] = useState<PublicDoodle | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [name, setName] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [name, setName] = useState<string | null>(null);
+  const [entryLoaded, setEntryLoaded] = useState(false);
+  const [checkingName, setCheckingName] = useState(false);
+
   const [roles, setRoles] = useState<Role[]>([]);
   const [canMd, setCanMd] = useState(false);
   const [availability, setAvailability] = useState<
@@ -48,17 +51,35 @@ export default function ParticipantPage() {
       .catch(() => setLoadError("Doodle konnte nicht geladen werden"));
   }, [id]);
 
-  async function loadExistingEntry(existingName: string) {
+  async function confirmName() {
+    const trimmedName = nameInput.trim();
+    if (!trimmedName) return;
+    setCheckingName(true);
     const response = await fetch(
-      `/api/doodles/${id}/participants?name=${encodeURIComponent(existingName)}`
+      `/api/doodles/${id}/participants?name=${encodeURIComponent(trimmedName)}`
     );
     const result = await response.json();
+    setCheckingName(false);
     if (result.participant) {
       setName(result.participant.name);
       setRoles(result.participant.roles);
       setCanMd(result.participant.can_md);
       setAvailability(result.participant.availability);
+      setEntryLoaded(true);
+    } else {
+      setName(trimmedName);
+      setRoles([]);
+      setCanMd(false);
+      setAvailability({});
+      setEntryLoaded(false);
     }
+  }
+
+  function changeName() {
+    setName(null);
+    setNameInput("");
+    setSaved(false);
+    setError(null);
   }
 
   function toggleRole(role: Role) {
@@ -79,7 +100,7 @@ export default function ParticipantPage() {
   async function save() {
     setError(null);
     setSaved(false);
-    if (!doodle) return;
+    if (!doodle || !name) return;
     const missingDates = doodle.dates.filter((date) => !availability[date]);
     if (missingDates.length > 0) {
       setError(
@@ -116,6 +137,42 @@ export default function ParticipantPage() {
     );
   }
 
+  if (name === null) {
+    return (
+      <div className="mx-auto max-w-md space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">{doodle.title}</h1>
+          <p className="text-slate-500">
+            Gib deinen Namen ein. Wenn du dich schon eingetragen hast, wird
+            dein Eintrag geladen.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <label className="block font-medium" htmlFor="name">
+            Dein Name
+          </label>
+          <input
+            id="name"
+            className="w-full rounded border border-slate-300 px-3 py-2"
+            placeholder="Vorname Nachname"
+            value={nameInput}
+            onChange={(event) => setNameInput(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && confirmName()}
+            autoFocus
+          />
+        </div>
+        <button
+          type="button"
+          onClick={confirmName}
+          disabled={!nameInput.trim() || checkingName}
+          className="w-full rounded bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+        >
+          {checkingName ? "Wird geprüft…" : "Weiter"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       <div>
@@ -125,35 +182,23 @@ export default function ParticipantPage() {
         </p>
       </div>
 
-      <section className="space-y-2">
-        <label className="block font-medium" htmlFor="name">
-          Dein Name
-        </label>
-        <input
-          id="name"
-          className="w-full rounded border border-slate-300 px-3 py-2"
-          placeholder="Vorname Nachname"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        {doodle.participantNames.length > 0 && (
+      <div className="flex items-center justify-between rounded border border-slate-200 bg-white px-4 py-3">
+        <div>
+          <p className="font-medium">{name}</p>
           <p className="text-sm text-slate-500">
-            Schon eingetragen?{" "}
-            {doodle.participantNames.map((existingName, index) => (
-              <span key={existingName}>
-                {index > 0 && ", "}
-                <button
-                  type="button"
-                  className="text-indigo-600 hover:underline"
-                  onClick={() => loadExistingEntry(existingName)}
-                >
-                  {existingName}
-                </button>
-              </span>
-            ))}
+            {entryLoaded
+              ? "Bestehender Eintrag geladen"
+              : "Neuer Eintrag"}
           </p>
-        )}
-      </section>
+        </div>
+        <button
+          type="button"
+          onClick={changeName}
+          className="text-sm text-indigo-600 hover:underline"
+        >
+          Name ändern
+        </button>
+      </div>
 
       <section className="space-y-2">
         <p className="font-medium">Deine Rollen (mehrere möglich)</p>

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase";
 
-// Public doodle info for the participant page (no plan, no password hash).
+// Public doodle info for the participant page (no participant names,
+// no plan, no password hash).
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
@@ -18,14 +19,5 @@ export async function GET(
       { status: 404 }
     );
 
-  const { data: participants } = await supabase
-    .from("participants")
-    .select("name")
-    .eq("doodle_id", params.id)
-    .order("name");
-
-  return NextResponse.json({
-    ...doodle,
-    participantNames: (participants ?? []).map((entry) => entry.name),
-  });
+  return NextResponse.json(doodle);
 }
