@@ -28,6 +28,9 @@ interface AdminDoodle {
   warnings: string[] | null;
 }
 
+// Sentinel option value that opens a free-text prompt (guests etc.).
+const CUSTOM_NAME_OPTION = "__custom__";
+
 const AVAILABILITY_SYMBOLS: Record<Availability, string> = {
   yes: "✓",
   maybe: "?",
@@ -452,16 +455,26 @@ function PlanRow({
           value={assignment.md ?? ""}
           status={null}
           accentDotClass="bg-indigo-500"
-          onChange={(selected) =>
-            onChange({ ...assignment, md: selected || null })
-          }
+          onChange={(selected) => {
+            if (selected === CUSTOM_NAME_OPTION) {
+              const entered = window.prompt("Name eingeben:")?.trim();
+              if (entered) onChange({ ...assignment, md: entered });
+              return;
+            }
+            onChange({ ...assignment, md: selected || null });
+          }}
         >
           <option value="">offen</option>
+          {assignment.md !== null &&
+            !mdCandidates.some(
+              (candidate) => candidate.name === assignment.md
+            ) && <option value={assignment.md}>{assignment.md} (Gast)</option>}
           {mdCandidates.map((candidate) => (
             <option key={candidate.name} value={candidate.name}>
               {candidate.name}
             </option>
           ))}
+          <option value={CUSTOM_NAME_OPTION}>✎ Anderer Name…</option>
         </StatusSelect>
       </td>
     </tr>
@@ -502,13 +515,20 @@ function StatusSelect({
   onChange: (value: string) => void;
 }) {
   const assigned = value !== "";
+  // status === null with a value means a free-text entry (guest) without
+  // availability data - shown neutrally instead of red.
+  const neutralDot = "bg-slate-400";
+  const neutralControl = "border-slate-300 bg-slate-50 text-slate-900";
   const dotClass = assigned
-    ? accentDotClass ?? SELECT_STATUS_STYLES[status ?? "no"].dot
+    ? accentDotClass ??
+      (status === null ? neutralDot : SELECT_STATUS_STYLES[status].dot)
     : "border border-dashed border-slate-300 bg-transparent";
   const controlClass = assigned
     ? accentDotClass
       ? "border-indigo-200 bg-indigo-50 text-indigo-950"
-      : SELECT_STATUS_STYLES[status ?? "no"].control
+      : status === null
+        ? neutralControl
+        : SELECT_STATUS_STYLES[status].control
     : "border-dashed border-slate-300 bg-white text-slate-400";
   return (
     <div className="relative">
@@ -548,8 +568,12 @@ function PersonSelect({
     (participant) =>
       participant.roles.includes(role) && !excluded.includes(participant.name)
   );
+  // A value that is no participant is a free-text entry (e.g. a guest).
+  const isCustomValue =
+    value !== null &&
+    !participants.some((participant) => participant.name === value);
   const currentAvailability =
-    value !== null
+    value !== null && !isCustomValue
       ? participants.find((participant) => participant.name === value)
           ?.availability[date] ?? "no"
       : null;
@@ -558,9 +582,17 @@ function PersonSelect({
     <StatusSelect
       value={value ?? ""}
       status={currentAvailability}
-      onChange={(selected) => onSelect(selected || null)}
+      onChange={(selected) => {
+        if (selected === CUSTOM_NAME_OPTION) {
+          const entered = window.prompt("Name eingeben:")?.trim();
+          if (entered) onSelect(entered);
+          return;
+        }
+        onSelect(selected || null);
+      }}
     >
       <option value="">offen</option>
+      {isCustomValue && <option value={value}>{value} (Gast)</option>}
       {options.map((participant) => {
         const availability = participant.availability[date] ?? "no";
         return (
@@ -569,6 +601,7 @@ function PersonSelect({
           </option>
         );
       })}
+      <option value={CUSTOM_NAME_OPTION}>✎ Anderer Name…</option>
     </StatusSelect>
   );
 }
