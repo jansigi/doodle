@@ -3,11 +3,31 @@
 import { useState } from "react";
 import { formatDateGerman } from "@/lib/roles";
 
+// Index matches JavaScript's Date.getDay() (0 = Sonntag).
+const WEEKDAYS = [
+  "Sonntag",
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+];
+
+function toIsoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 export default function CreateDoodlePage() {
   const [title, setTitle] = useState("");
   const [password, setPassword] = useState("");
   const [dateInput, setDateInput] = useState("");
   const [dates, setDates] = useState<string[]>([]);
+  const [weekday, setWeekday] = useState(0); // 0 = Sonntag (JS getDay)
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -16,6 +36,23 @@ export default function CreateDoodlePage() {
     if (!dateInput || dates.includes(dateInput)) return;
     setDates([...dates, dateInput].sort());
     setDateInput("");
+  }
+
+  function addWeeklyDates() {
+    if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) return;
+    const start = new Date(rangeStart + "T00:00:00");
+    const end = new Date(rangeEnd + "T00:00:00");
+    const daysUntilWeekday = (weekday - start.getDay() + 7) % 7;
+    const first = new Date(start);
+    first.setDate(start.getDate() + daysUntilWeekday);
+    const weekCount =
+      Math.floor((end.getTime() - first.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    const generated = Array.from({ length: Math.max(0, weekCount) }, (_, week) => {
+      const date = new Date(first);
+      date.setDate(first.getDate() + week * 7);
+      return toIsoDate(date);
+    });
+    setDates([...new Set([...dates, ...generated])].sort());
   }
 
   async function createDoodle() {
@@ -83,24 +120,72 @@ export default function CreateDoodlePage() {
       </div>
 
       <div className="space-y-2">
-        <label className="block font-medium" htmlFor="date">
-          Daten der Celebrations
-        </label>
-        <div className="flex gap-2">
-          <input
-            id="date"
-            type="date"
-            className="rounded border border-slate-300 px-3 py-2"
-            value={dateInput}
-            onChange={(event) => setDateInput(event.target.value)}
-          />
-          <button
-            type="button"
-            onClick={addDate}
-            className="rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700"
-          >
-            Hinzufügen
-          </button>
+        <p className="font-medium">Daten der Celebrations</p>
+        <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
+          <p className="text-sm font-medium text-slate-600">
+            Wöchentlich hinzufügen
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block text-sm">
+              Wochentag
+              <select
+                className="mt-1 block rounded border border-slate-300 px-3 py-2"
+                value={weekday}
+                onChange={(event) => setWeekday(Number(event.target.value))}
+              >
+                {WEEKDAYS.map((label, index) => (
+                  <option key={label} value={index}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              Von
+              <input
+                type="date"
+                className="mt-1 block rounded border border-slate-300 px-3 py-2"
+                value={rangeStart}
+                onChange={(event) => setRangeStart(event.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              Bis
+              <input
+                type="date"
+                className="mt-1 block rounded border border-slate-300 px-3 py-2"
+                value={rangeEnd}
+                onChange={(event) => setRangeEnd(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={addWeeklyDates}
+              disabled={!rangeStart || !rangeEnd || rangeEnd < rangeStart}
+              className="rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              Alle hinzufügen
+            </button>
+          </div>
+          <p className="text-sm font-medium text-slate-600">
+            Einzelnes Datum hinzufügen
+          </p>
+          <div className="flex gap-2">
+            <input
+              id="date"
+              type="date"
+              className="rounded border border-slate-300 px-3 py-2"
+              value={dateInput}
+              onChange={(event) => setDateInput(event.target.value)}
+            />
+            <button
+              type="button"
+              onClick={addDate}
+              className="rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700"
+            >
+              Hinzufügen
+            </button>
+          </div>
         </div>
         <ul className="divide-y rounded border border-slate-200 bg-white">
           {dates.length === 0 && (
