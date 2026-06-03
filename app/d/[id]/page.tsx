@@ -48,7 +48,7 @@ export default function ParticipantPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/doodles/${id}`)
+    fetch(`/api/doodles/${id}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((result) => {
         if (result.error) setLoadError(result.error);
@@ -62,7 +62,8 @@ export default function ParticipantPage() {
     if (!trimmedName) return;
     setCheckingName(true);
     const response = await fetch(
-      `/api/doodles/${id}/participants?name=${encodeURIComponent(trimmedName)}`
+      `/api/doodles/${id}/participants?name=${encodeURIComponent(trimmedName)}`,
+      { cache: "no-store" }
     );
     const result = await response.json();
     setCheckingName(false);

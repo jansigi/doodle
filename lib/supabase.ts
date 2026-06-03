@@ -14,5 +14,10 @@ export function createServerSupabase() {
   }
   return createClient(url, secretKey, {
     auth: { persistSession: false },
+    global: {
+      // Next.js patches fetch with caching defaults inside route handlers -
+      // data must always be read fresh (e.g. status after close/reopen).
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    },
   });
 }

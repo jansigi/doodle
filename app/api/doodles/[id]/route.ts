@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase";
 
+// Never cache: participants must immediately see status changes (open/closed).
+export const dynamic = "force-dynamic";
+
 // Public doodle info for the participant page (no participant names,
 // no plan, no password hash).
 export async function GET(
