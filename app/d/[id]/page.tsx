@@ -1,0 +1,254 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import type { Availability, Role } from "@/lib/types";
+import { ALL_ROLES, ROLE_LABELS, formatDateGerman } from "@/lib/roles";
+
+interface PublicDoodle {
+  id: string;
+  title: string;
+  status: "open" | "closed";
+  dates: string[];
+  participantNames: string[];
+}
+
+const AVAILABILITY_OPTIONS: Array<{
+  value: Availability;
+  label: string;
+  activeClass: string;
+}> = [
+  { value: "yes", label: "Ja", activeClass: "bg-green-600 text-white" },
+  { value: "maybe", label: "Vielleicht", activeClass: "bg-amber-500 text-white" },
+  { value: "no", label: "Nein", activeClass: "bg-red-600 text-white" },
+];
+
+export default function ParticipantPage() {
+  const { id } = useParams<{ id: string }>();
+  const [doodle, setDoodle] = useState<PublicDoodle | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [name, setName] = useState("");
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [canMd, setCanMd] = useState(false);
+  const [availability, setAvailability] = useState<
+    Record<string, Availability>
+  >({});
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/doodles/${id}`)
+      .then((response) => response.json())
+      .then((result) => {
+        if (result.error) setLoadError(result.error);
+        else setDoodle(result);
+      })
+      .catch(() => setLoadError("Doodle konnte nicht geladen werden"));
+  }, [id]);
+
+  async function loadExistingEntry(existingName: string) {
+    const response = await fetch(
+      `/api/doodles/${id}/participants?name=${encodeURIComponent(existingName)}`
+    );
+    const result = await response.json();
+    if (result.participant) {
+      setName(result.participant.name);
+      setRoles(result.participant.roles);
+      setCanMd(result.participant.can_md);
+      setAvailability(result.participant.availability);
+    }
+  }
+
+  function toggleRole(role: Role) {
+    setRoles(
+      roles.includes(role)
+        ? roles.filter((existing) => existing !== role)
+        : [...roles, role]
+    );
+  }
+
+  function setAllAvailability(value: Availability) {
+    if (!doodle) return;
+    setAvailability(
+      Object.fromEntries(doodle.dates.map((date) => [date, value]))
+    );
+  }
+
+  async function save() {
+    setError(null);
+    setSaved(false);
+    if (!doodle) return;
+    const missingDates = doodle.dates.filter((date) => !availability[date]);
+    if (missingDates.length > 0) {
+      setError(
+        `Bitte für alle Daten eine Antwort wählen (${missingDates.length} fehlen)`
+      );
+      return;
+    }
+    setSubmitting(true);
+    const response = await fetch(`/api/doodles/${id}/participants`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, roles, canMd, availability }),
+    });
+    const result = await response.json();
+    setSubmitting(false);
+    if (!response.ok) {
+      setError(result.error ?? "Unbekannter Fehler");
+      return;
+    }
+    setSaved(true);
+  }
+
+  if (loadError) return <p className="text-red-600">{loadError}</p>;
+  if (!doodle) return <p className="text-slate-500">Lädt…</p>;
+
+  if (doodle.status !== "open") {
+    return (
+      <div className="mx-auto max-w-xl space-y-4">
+        <h1 className="text-2xl font-bold">{doodle.title}</h1>
+        <p className="rounded bg-amber-100 p-4 text-amber-900">
+          Dieses Doodle ist geschlossen. Der Plan wurde bereits erstellt.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold">{doodle.title}</h1>
+        <p className="text-slate-500">
+          Trage deine Rollen und deine Verfügbarkeit für das Semester ein.
+        </p>
+      </div>
+
+      <section className="space-y-2">
+        <label className="block font-medium" htmlFor="name">
+          Dein Name
+        </label>
+        <input
+          id="name"
+          className="w-full rounded border border-slate-300 px-3 py-2"
+          placeholder="Vorname Nachname"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+        {doodle.participantNames.length > 0 && (
+          <p className="text-sm text-slate-500">
+            Schon eingetragen?{" "}
+            {doodle.participantNames.map((existingName, index) => (
+              <span key={existingName}>
+                {index > 0 && ", "}
+                <button
+                  type="button"
+                  className="text-indigo-600 hover:underline"
+                  onClick={() => loadExistingEntry(existingName)}
+                >
+                  {existingName}
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <p className="font-medium">Deine Rollen (mehrere möglich)</p>
+        <div className="flex flex-wrap gap-2">
+          {ALL_ROLES.map((role) => (
+            <button
+              key={role}
+              type="button"
+              onClick={() => toggleRole(role)}
+              className={`rounded-full border px-4 py-1.5 text-sm transition ${
+                roles.includes(role)
+                  ? "border-indigo-600 bg-indigo-600 text-white"
+                  : "border-slate-300 bg-white hover:border-indigo-400"
+              }`}
+            >
+              {ROLE_LABELS[role]}
+            </button>
+          ))}
+        </div>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={canMd}
+            onChange={(event) => setCanMd(event.target.checked)}
+          />
+          Ich kann MD (Musical Director) übernehmen
+        </label>
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="font-medium">Deine Verfügbarkeit</p>
+          <div className="flex gap-2 text-sm">
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={() => setAllAvailability("yes")}
+            >
+              Alle Ja
+            </button>
+            <button
+              type="button"
+              className="text-indigo-600 hover:underline"
+              onClick={() => setAllAvailability("no")}
+            >
+              Alle Nein
+            </button>
+          </div>
+        </div>
+        <ul className="divide-y rounded border border-slate-200 bg-white">
+          {doodle.dates.map((date) => (
+            <li
+              key={date}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+            >
+              <span>{formatDateGerman(date)}</span>
+              <div className="flex gap-1">
+                {AVAILABILITY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      setAvailability({ ...availability, [date]: option.value })
+                    }
+                    className={`rounded px-3 py-1 text-sm transition ${
+                      availability[date] === option.value
+                        ? option.activeClass
+                        : "bg-slate-100 hover:bg-slate-200"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {error && <p className="text-red-600">{error}</p>}
+      {saved && (
+        <p className="rounded bg-green-100 p-3 text-green-800">
+          Gespeichert! Du kannst deine Angaben jederzeit über deinen Namen
+          wieder laden und anpassen.
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={save}
+        disabled={submitting}
+        className="w-full rounded bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+      >
+        {submitting ? "Wird gespeichert…" : "Speichern"}
+      </button>
+    </div>
+  );
+}
