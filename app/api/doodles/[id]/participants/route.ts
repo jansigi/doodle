@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase";
 import type { Availability, Role } from "@/lib/types";
-import { ALL_ROLES } from "@/lib/roles";
+import { ALL_ROLES, INSTRUMENT_ROLES } from "@/lib/roles";
 
 // Load an existing entry by name so a participant can edit their answer.
 export async function GET(
@@ -33,7 +33,10 @@ export async function POST(
   const roles: Role[] = Array.isArray(body.roles)
     ? body.roles.filter((role: Role) => ALL_ROLES.includes(role))
     : [];
-  const canMd: boolean = Boolean(body.canMd);
+  // MD is only possible for instrumentalists (keys, bass, e-guitar, drums).
+  const canMd: boolean =
+    Boolean(body.canMd) &&
+    roles.some((role: Role) => INSTRUMENT_ROLES.includes(role));
   const availability: Record<string, Availability> = body.availability ?? {};
 
   if (!name)

@@ -195,16 +195,7 @@ export default function AdminPage() {
       {error && <p className="text-red-600">{error}</p>}
 
       {doodle.warnings && doodle.warnings.length > 0 && (
-        <section className="rounded border border-amber-300 bg-amber-50 p-4">
-          <h2 className="mb-2 font-semibold text-amber-900">
-            Hinweise ({doodle.warnings.length})
-          </h2>
-          <ul className="list-inside list-disc space-y-1 text-sm text-amber-900">
-            {doodle.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </section>
+        <WarningsAccordion warnings={doodle.warnings} />
       )}
 
       {plan && (
@@ -218,6 +209,33 @@ export default function AdminPage() {
 
       <AvailabilityMatrix dates={doodle.dates} participants={participants} />
     </div>
+  );
+}
+
+function WarningsAccordion({ warnings }: { warnings: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleWarnings = expanded ? warnings : warnings.slice(0, 5);
+  const hiddenCount = warnings.length - visibleWarnings.length;
+  return (
+    <section className="rounded border border-amber-300 bg-amber-50 p-4">
+      <h2 className="mb-2 font-semibold text-amber-900">
+        Hinweise ({warnings.length})
+      </h2>
+      <ul className="list-inside list-disc space-y-1 text-sm text-amber-900">
+        {visibleWarnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+      {warnings.length > 5 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-sm font-medium text-amber-900 underline hover:no-underline"
+        >
+          {expanded ? "Weniger anzeigen" : `Alle anzeigen (${hiddenCount} weitere)`}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -295,8 +313,16 @@ function PlanRow({
     ...assignment.egit,
   ].filter((name): name is string => name !== null);
 
+  // Only people on an instrument slot can be MD.
+  const instrumentNames = [
+    assignment.bass,
+    assignment.drums,
+    assignment.keys,
+    ...assignment.egit,
+  ].filter((name): name is string => name !== null);
   const mdCandidates = participants.filter(
-    (participant) => assigned.includes(participant.name) && participant.can_md
+    (participant) =>
+      instrumentNames.includes(participant.name) && participant.can_md
   );
 
   function singleSelect(role: "leader" | "coordinator" | "bass" | "drums" | "keys") {

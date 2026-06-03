@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { Availability, Role } from "@/lib/types";
-import { ALL_ROLES, ROLE_LABELS, formatDateGerman } from "@/lib/roles";
+import {
+  ALL_ROLES,
+  INSTRUMENT_ROLES,
+  ROLE_LABELS,
+  formatDateGerman,
+} from "@/lib/roles";
 
 interface PublicDoodle {
   id: string;
@@ -83,12 +88,19 @@ export default function ParticipantPage() {
   }
 
   function toggleRole(role: Role) {
-    setRoles(
-      roles.includes(role)
-        ? roles.filter((existing) => existing !== role)
-        : [...roles, role]
-    );
+    const updatedRoles = roles.includes(role)
+      ? roles.filter((existing) => existing !== role)
+      : [...roles, role];
+    setRoles(updatedRoles);
+    if (
+      !updatedRoles.some((selected) => INSTRUMENT_ROLES.includes(selected))
+    )
+      setCanMd(false);
   }
+
+  const playsInstrument = roles.some((selected) =>
+    INSTRUMENT_ROLES.includes(selected)
+  );
 
   function setAllAvailability(value: Availability) {
     if (!doodle) return;
@@ -218,14 +230,16 @@ export default function ParticipantPage() {
             </button>
           ))}
         </div>
-        <label className="mt-2 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={canMd}
-            onChange={(event) => setCanMd(event.target.checked)}
-          />
-          Ich kann MD (Musical Director) übernehmen
-        </label>
+        {playsInstrument && (
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={canMd}
+              onChange={(event) => setCanMd(event.target.checked)}
+            />
+            Ich kann MD (Musical Director) übernehmen
+          </label>
+        )}
       </section>
 
       <section className="space-y-2">

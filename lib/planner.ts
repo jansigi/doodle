@@ -205,13 +205,20 @@ export function generatePlan(
     });
   });
 
-  // Pass 3: pick a musical director per date among the assigned people.
+  // Pass 3: pick a musical director per date. Only instrumentalists qualify,
+  // so candidates are the people assigned to an instrument slot that date.
   const participantsByName = new Map(
     participants.map((participant) => [participant.name, participant])
   );
   sortedDates.forEach((date) => {
     const assignment = plan[date];
-    const mdCandidates = assignedNames(assignment)
+    const mdCandidates = [
+      assignment.bass,
+      assignment.drums,
+      assignment.keys,
+      ...assignment.egit,
+    ]
+      .filter((name): name is string => name !== null)
       .map((name) => participantsByName.get(name))
       .filter(
         (participant): participant is Participant =>

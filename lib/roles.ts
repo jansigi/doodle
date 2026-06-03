@@ -10,6 +10,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   keys: "Keys",
 };
 
+// Only instrumentalists can take the MD (Musical Director) role.
+export const INSTRUMENT_ROLES: Role[] = ["bass", "egit", "drums", "keys"];
+
 export const ALL_ROLES: Role[] = [
   "leader",
   "coordinator",
