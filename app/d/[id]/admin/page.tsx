@@ -253,22 +253,24 @@ function PlanEditor({
   return (
     <section className="space-y-3">
       <h2 className="text-xl font-semibold">Plan</h2>
-      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[1100px] text-sm">
-          <thead className="bg-slate-100 text-left">
-            <tr>
-              <th className="px-3 py-2">Datum</th>
-              <th className="px-3 py-2">{ROLE_LABELS.leader}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.coordinator}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.vocal}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.bass}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.egit}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.drums}</th>
-              <th className="px-3 py-2">{ROLE_LABELS.keys}</th>
-              <th className="px-3 py-2">MD</th>
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+              <th className="px-3 py-3 font-semibold">Datum</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.leader}</th>
+              <th className="px-3 py-3 font-semibold">
+                {ROLE_LABELS.coordinator}
+              </th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.vocal}</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.bass}</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.egit}</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.drums}</th>
+              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.keys}</th>
+              <th className="px-3 py-3 font-semibold">MD</th>
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody className="divide-y divide-slate-100">
             {dates.map((date) => {
               const assignment = plan[date];
               if (!assignment) return null;
@@ -285,8 +287,20 @@ function PlanEditor({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        ✓ verfügbar · ? vielleicht · ✗ nicht verfügbar
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-green-500" /> verfügbar
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-amber-400" /> vielleicht
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-red-400" /> nicht verfügbar
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full border border-dashed border-slate-300" />{" "}
+          offen
+        </span>
       </p>
     </section>
   );
@@ -378,10 +392,20 @@ function PlanRow({
     );
   }
 
+  const dateObject = new Date(date + "T00:00:00");
   return (
-    <tr className="align-top">
-      <td className="whitespace-nowrap px-3 py-2 font-medium">
-        {formatDateGerman(date)}
+    <tr className="align-top transition-colors hover:bg-slate-50/70">
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+          {dateObject.toLocaleDateString("de-CH", { weekday: "long" })}
+        </span>
+        <span className="font-semibold text-slate-800">
+          {dateObject.toLocaleDateString("de-CH", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          })}
+        </span>
       </td>
       <td className="px-3 py-2">{singleSelect("leader")}</td>
       <td className="px-3 py-2">{singleSelect("coordinator")}</td>
@@ -391,22 +415,84 @@ function PlanRow({
       <td className="px-3 py-2">{singleSelect("drums")}</td>
       <td className="px-3 py-2">{singleSelect("keys")}</td>
       <td className="px-3 py-2">
-        <select
-          className="w-full rounded border border-slate-300 px-2 py-1"
+        <StatusSelect
           value={assignment.md ?? ""}
-          onChange={(event) =>
-            onChange({ ...assignment, md: event.target.value || null })
+          status={null}
+          accentDotClass="bg-indigo-500"
+          onChange={(selected) =>
+            onChange({ ...assignment, md: selected || null })
           }
         >
-          <option value="">—</option>
+          <option value="">offen</option>
           {mdCandidates.map((candidate) => (
             <option key={candidate.name} value={candidate.name}>
               {candidate.name}
             </option>
           ))}
-        </select>
+        </StatusSelect>
       </td>
     </tr>
+  );
+}
+
+// Availability is shown inside the control itself: a colored status dot plus
+// a soft tint, so an assigned person reads as one coherent pill.
+const SELECT_STATUS_STYLES: Record<
+  Availability,
+  { dot: string; control: string }
+> = {
+  yes: {
+    dot: "bg-green-500",
+    control: "border-green-200 bg-green-50 text-green-950",
+  },
+  maybe: {
+    dot: "bg-amber-400",
+    control: "border-amber-300 bg-amber-50 text-amber-950",
+  },
+  no: {
+    dot: "bg-red-400",
+    control: "border-red-300 bg-red-50 text-red-950",
+  },
+};
+
+function StatusSelect({
+  value,
+  status,
+  accentDotClass,
+  children,
+  onChange,
+}: {
+  value: string;
+  status: Availability | null;
+  accentDotClass?: string;
+  children: React.ReactNode;
+  onChange: (value: string) => void;
+}) {
+  const assigned = value !== "";
+  const dotClass = assigned
+    ? accentDotClass ?? SELECT_STATUS_STYLES[status ?? "no"].dot
+    : "border border-dashed border-slate-300 bg-transparent";
+  const controlClass = assigned
+    ? accentDotClass
+      ? "border-indigo-200 bg-indigo-50 text-indigo-950"
+      : SELECT_STATUS_STYLES[status ?? "no"].control
+    : "border-dashed border-slate-300 bg-white text-slate-400";
+  return (
+    <div className="relative">
+      <span
+        className={`pointer-events-none absolute left-2.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full ${dotClass}`}
+      />
+      <select
+        className={`w-full cursor-pointer appearance-none rounded-md border py-1.5 pl-7 pr-7 text-sm font-medium shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-300 ${controlClass}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+        ▾
+      </span>
+    </div>
   );
 }
 
@@ -432,36 +518,25 @@ function PersonSelect({
   const currentAvailability =
     value !== null
       ? participants.find((participant) => participant.name === value)
-          ?.availability[date]
-      : undefined;
+          ?.availability[date] ?? "no"
+      : null;
 
   return (
-    <div className="flex items-center gap-1">
-      <select
-        className="w-full rounded border border-slate-300 px-2 py-1"
-        value={value ?? ""}
-        onChange={(event) => onSelect(event.target.value || null)}
-      >
-        <option value="">—</option>
-        {options.map((participant) => {
-          const availability = participant.availability[date] ?? "no";
-          return (
-            <option key={participant.name} value={participant.name}>
-              {participant.name} {AVAILABILITY_SYMBOLS[availability]}
-            </option>
-          );
-        })}
-      </select>
-      {value !== null && (
-        <span
-          className={`rounded px-1.5 py-0.5 text-xs ${
-            AVAILABILITY_CLASSES[currentAvailability ?? "no"]
-          }`}
-        >
-          {AVAILABILITY_SYMBOLS[currentAvailability ?? "no"]}
-        </span>
-      )}
-    </div>
+    <StatusSelect
+      value={value ?? ""}
+      status={currentAvailability}
+      onChange={(selected) => onSelect(selected || null)}
+    >
+      <option value="">offen</option>
+      {options.map((participant) => {
+        const availability = participant.availability[date] ?? "no";
+        return (
+          <option key={participant.name} value={participant.name}>
+            {participant.name} {AVAILABILITY_SYMBOLS[availability]}
+          </option>
+        );
+      })}
+    </StatusSelect>
   );
 }
 
