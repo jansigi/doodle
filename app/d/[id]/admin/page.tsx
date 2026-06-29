@@ -9,6 +9,7 @@ import type {
   Role,
 } from "@/lib/types";
 import { LINEUP_TARGETS, ROLE_LABELS, formatDateGerman } from "@/lib/roles";
+import { downloadAvailabilityCsv } from "@/lib/csv";
 import { downloadPlanPdf } from "@/lib/pdf";
 
 interface AdminParticipant {
@@ -211,7 +212,11 @@ export default function AdminPage() {
         />
       )}
 
-      <AvailabilityMatrix dates={doodle.dates} participants={participants} />
+      <AvailabilityMatrix
+        title={doodle.title}
+        dates={doodle.dates}
+        participants={participants}
+      />
     </div>
   );
 }
@@ -607,9 +612,11 @@ function PersonSelect({
 }
 
 function AvailabilityMatrix({
+  title,
   dates,
   participants,
 }: {
+  title: string;
   dates: string[];
   participants: AdminParticipant[];
 }) {
@@ -619,7 +626,16 @@ function AvailabilityMatrix({
     );
   return (
     <section className="space-y-3">
-      <h2 className="text-xl font-semibold">Verfügbarkeiten</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl font-semibold">Verfügbarkeiten</h2>
+        <button
+          type="button"
+          onClick={() => downloadAvailabilityCsv(title, dates, participants)}
+          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+        >
+          CSV herunterladen
+        </button>
+      </div>
       <div className="overflow-x-auto rounded border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-100 text-left">
