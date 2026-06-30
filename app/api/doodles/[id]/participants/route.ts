@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase";
 import type { Availability, Role } from "@/lib/types";
-import { ALL_ROLES, INSTRUMENT_ROLES } from "@/lib/roles";
+import { normalizeRoles } from "@/lib/migrate";
+import { INSTRUMENT_ROLES } from "@/lib/roles";
 
 // Load an existing entry by name so a participant can edit their answer.
 export async function GET(
@@ -20,7 +21,14 @@ export async function GET(
     .ilike("name", name)
     .maybeSingle();
 
-  return NextResponse.json({ participant: participant ?? null });
+  return NextResponse.json({
+    participant: participant
+      ? {
+          ...participant,
+          roles: normalizeRoles(participant.roles as string[]),
+        }
+      : null,
+  });
 }
 
 // Create or update a participant entry (upsert by doodle + name).
@@ -30,9 +38,9 @@ export async function POST(
 ) {
   const body = await request.json();
   const name: string = (body.name ?? "").trim();
-  const roles: Role[] = Array.isArray(body.roles)
-    ? body.roles.filter((role: Role) => ALL_ROLES.includes(role))
-    : [];
+  const roles: Role[] = normalizeRoles(
+    Array.isArray(body.roles) ? body.roles : []
+  );
   // MD is only possible for instrumentalists (keys, bass, e-guitar, drums).
   const canMd: boolean =
     Boolean(body.canMd) &&

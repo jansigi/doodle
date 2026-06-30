@@ -24,7 +24,6 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
     return [
       formatDateGerman(date),
       withMdTag(assignment.leader, assignment.md),
-      withMdTag(assignment.coordinator, assignment.md),
       listWithMdTag(assignment.vocals, assignment.md),
       withMdTag(assignment.bass, assignment.md),
       listWithMdTag(assignment.egit, assignment.md),
@@ -43,7 +42,6 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
       [
         "Datum",
         "Worship Leader",
-        "Vocal Coordinator",
         "Vocals",
         "Bass",
         "E-Gitarre",

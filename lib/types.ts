@@ -1,6 +1,5 @@
 export type Role =
   | "leader"
-  | "coordinator"
   | "vocal"
   | "bass"
   | "egit"
@@ -34,12 +33,11 @@ export interface Participant {
 
 export interface DateAssignment {
   leader: string | null;
-  coordinator: string | null;
   vocals: string[];
   bass: string | null;
   egit: string[];
   // A-Guitar is the only instrument that can be combined with a singing role:
-  // the assigned person may simultaneously be leader/coordinator/vocal.
+  // the assigned person may simultaneously be leader/vocal.
   aguitar: string | null;
   drums: string | null;
   keys: string | null;
@@ -51,7 +49,6 @@ export type Plan = Record<string, DateAssignment>; // date -> assignment
 export function emptyDateAssignment(): DateAssignment {
   return {
     leader: null,
-    coordinator: null,
     vocals: [],
     bass: null,
     egit: [],

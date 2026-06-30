@@ -33,12 +33,11 @@ interface PlannerResult {
 }
 
 // Roles that hold a single person vs. a list in the DateAssignment.
-const SINGLE_ROLES: Role[] = ["leader", "coordinator", "bass", "drums", "keys"];
+const SINGLE_ROLES: Role[] = ["leader", "bass", "drums", "keys"];
 
 function assignedNames(assignment: DateAssignment): string[] {
   return [
     assignment.leader,
-    assignment.coordinator,
     assignment.bass,
     assignment.drums,
     assignment.keys,
@@ -104,7 +103,7 @@ function assignToRole(
 ): void {
   if (role === "vocal") assignment.vocals.push(name);
   else if (role === "egit") assignment.egit.push(name);
-  else assignment[role as "leader" | "coordinator" | "bass" | "drums" | "keys"] = name;
+  else assignment[role as "leader" | "bass" | "drums" | "keys"] = name;
 }
 
 function recordAssignment(
@@ -162,7 +161,6 @@ export function generatePlan(
     const assignment = plan[date];
     const fillOrder: Role[] = [
       "leader",
-      "coordinator",
       "drums",
       "keys",
       "bass",
@@ -205,12 +203,11 @@ export function generatePlan(
     });
   });
 
-  // Pass 2: fill optional extra slots (3rd vocal, 2nd e-guitar) with people
+  // Pass 2: fill optional extra slots (2nd e-guitar) with people
   // who answered "yes", keeping the load balanced.
   sortedDates.forEach((date, dateIndex) => {
     const assignment = plan[date];
     const optionalSlots: Array<{ role: Role; current: number }> = [
-      { role: "vocal", current: assignment.vocals.length },
       { role: "egit", current: assignment.egit.length },
     ];
     optionalSlots.forEach(({ role, current }) => {
@@ -250,7 +247,6 @@ export function generatePlan(
     const assignment = plan[date];
     const singers = [
       assignment.leader,
-      assignment.coordinator,
       ...assignment.vocals,
     ].filter((name): name is string => name !== null);
     const singingGuitarist = singers
@@ -334,7 +330,6 @@ export function generatePlan(
     const assignment = plan[date];
     const counts: Record<Role, number> = {
       leader: assignment.leader ? 1 : 0,
-      coordinator: assignment.coordinator ? 1 : 0,
       vocal: assignment.vocals.length,
       bass: assignment.bass ? 1 : 0,
       egit: assignment.egit.length,

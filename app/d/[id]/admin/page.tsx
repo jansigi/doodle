@@ -271,9 +271,6 @@ function PlanEditor({
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <th className="px-3 py-3 font-semibold">Datum</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.leader}</th>
-              <th className="px-3 py-3 font-semibold">
-                {ROLE_LABELS.coordinator}
-              </th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.vocal}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.bass}</th>
               <th className="px-3 py-3 font-semibold">{ROLE_LABELS.egit}</th>
@@ -333,7 +330,6 @@ function PlanRow({
 }) {
   const assigned = [
     assignment.leader,
-    assignment.coordinator,
     assignment.bass,
     assignment.drums,
     assignment.keys,
@@ -354,7 +350,7 @@ function PlanRow({
       instrumentNames.includes(participant.name) && participant.can_md
   );
 
-  function singleSelect(role: "leader" | "coordinator" | "bass" | "drums" | "keys") {
+  function singleSelect(role: "leader" | "bass" | "drums" | "keys") {
     // A-Guitar may double with a singing role, but never with another
     // instrument - so the acoustic guitarist is blocked for instrument slots.
     const aguitarBlocked =
@@ -439,7 +435,6 @@ function PlanRow({
         </span>
       </td>
       <td className="px-3 py-2">{singleSelect("leader")}</td>
-      <td className="px-3 py-2">{singleSelect("coordinator")}</td>
       <td className="px-3 py-2">{multiSelect("vocal", assignment.vocals)}</td>
       <td className="px-3 py-2">{singleSelect("bass")}</td>
       <td className="px-3 py-2">{multiSelect("egit", assignment.egit)}</td>

@@ -2,7 +2,6 @@ import type { Role } from "./types";
 
 export const ROLE_LABELS: Record<Role, string> = {
   leader: "Worship Leader",
-  coordinator: "Vocal Coordinator",
   vocal: "Vocals",
   bass: "Bass",
   egit: "E-Gitarre",
@@ -17,7 +16,6 @@ export const INSTRUMENT_ROLES: Role[] = ["bass", "egit", "drums", "keys"];
 
 export const ALL_ROLES: Role[] = [
   "leader",
-  "coordinator",
   "vocal",
   "bass",
   "egit",
@@ -26,12 +24,10 @@ export const ALL_ROLES: Role[] = [
   "keys",
 ];
 
-// Target lineup per celebration. Leader and coordinator count toward the
-// 4-5 vocal total, so 2-3 additional pure vocals are needed.
+// Target lineup per celebration: 1 worship leader plus 4 additional vocals.
 export const LINEUP_TARGETS: Record<Role, { min: number; max: number }> = {
   leader: { min: 1, max: 1 },
-  coordinator: { min: 1, max: 1 },
-  vocal: { min: 2, max: 3 },
+  vocal: { min: 4, max: 4 },
   bass: { min: 1, max: 1 },
   egit: { min: 1, max: 2 },
   aguitar: { min: 0, max: 1 }, // optional, may double with a singing role

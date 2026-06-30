@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { createServerSupabase } from "@/lib/supabase";
 import { generatePlan } from "@/lib/planner";
+import { normalizePlan, normalizeRoles } from "@/lib/migrate";
 import type { Participant, Plan } from "@/lib/types";
 
 type AdminAction = "login" | "close" | "reopen" | "regenerate" | "updatePlan";
@@ -35,7 +36,10 @@ export async function POST(
     .select("*")
     .eq("doodle_id", params.id)
     .order("name");
-  const participants = (participantRows ?? []) as Participant[];
+  const participants = (participantRows ?? []).map((row) => ({
+    ...(row as Participant),
+    roles: normalizeRoles((row as Participant).roles as string[]),
+  }));
 
   const updates: Record<string, unknown> = {};
 
@@ -47,7 +51,7 @@ export async function POST(
   } else if (action === "reopen") {
     updates.status = "open";
   } else if (action === "updatePlan") {
-    updates.plan = body.plan as Plan;
+    updates.plan = normalizePlan(body.plan as Plan);
     updates.warnings = body.warnings ?? doodle.warnings;
   }
 
@@ -66,7 +70,7 @@ export async function POST(
       title: doodle.title,
       status: (updates.status as string) ?? doodle.status,
       dates: doodle.dates,
-      plan: (updates.plan as Plan) ?? doodle.plan,
+      plan: normalizePlan((updates.plan as Plan) ?? doodle.plan),
       warnings: (updates.warnings as string[]) ?? doodle.warnings,
     },
     participants: participants.map((participant) => ({
