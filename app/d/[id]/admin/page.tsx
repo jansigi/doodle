@@ -214,8 +214,18 @@ export default function AdminPage() {
 
       <AvailabilityMatrix
         title={doodle.title}
+        doodleId={doodle.id}
+        status={doodle.status}
         dates={doodle.dates}
         participants={participants}
+        busy={busy}
+        onDelete={(participantName) => {
+          const confirmed = window.confirm(
+            `Bist du sicher, dass du den Eintrag von «${participantName}» löschen möchtest? Das kann nicht rückgängig gemacht werden.`
+          );
+          if (confirmed)
+            callAdmin("deleteParticipant", undefined, { participantName });
+        }}
       />
     </div>
   );
@@ -608,12 +618,20 @@ function PersonSelect({
 
 function AvailabilityMatrix({
   title,
+  doodleId,
+  status,
   dates,
   participants,
+  busy,
+  onDelete,
 }: {
   title: string;
+  doodleId: string;
+  status: "open" | "closed";
   dates: string[];
   participants: AdminParticipant[];
+  busy: boolean;
+  onDelete: (participantName: string) => void;
 }) {
   if (participants.length === 0)
     return (
@@ -645,6 +663,7 @@ function AvailabilityMatrix({
                   {formatDateGerman(date).slice(0, -5)}
                 </th>
               ))}
+              <th className="px-3 py-2 text-right">Aktionen</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -684,6 +703,28 @@ function AvailabilityMatrix({
                     </td>
                   );
                 })}
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  {/* Editing happens on the participant page - only possible
+                      while the doodle is still open. */}
+                  {status === "open" && (
+                    <a
+                      href={`/d/${doodleId}?name=${encodeURIComponent(participant.name)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mr-3 text-sm text-indigo-600 hover:underline"
+                    >
+                      Bearbeiten
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(participant.name)}
+                    disabled={busy}
+                    className="text-sm text-red-600 hover:underline disabled:opacity-50"
+                  >
+                    Löschen
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

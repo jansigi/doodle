@@ -5,7 +5,13 @@ import { generatePlan } from "@/lib/planner";
 import { normalizePlan, normalizeRoles } from "@/lib/migrate";
 import type { Participant, Plan } from "@/lib/types";
 
-type AdminAction = "login" | "close" | "reopen" | "regenerate" | "updatePlan";
+type AdminAction =
+  | "login"
+  | "close"
+  | "reopen"
+  | "regenerate"
+  | "updatePlan"
+  | "deleteParticipant";
 
 export async function POST(
   request: NextRequest,
@@ -30,6 +36,19 @@ export async function POST(
   const passwordValid = await bcrypt.compare(password, doodle.password_hash);
   if (!passwordValid)
     return NextResponse.json({ error: "Falsches Passwort" }, { status: 401 });
+
+  if (action === "deleteParticipant") {
+    const participantName: string = (body.participantName ?? "").trim();
+    if (!participantName)
+      return NextResponse.json({ error: "Name fehlt" }, { status: 400 });
+    const { error } = await supabase
+      .from("participants")
+      .delete()
+      .eq("doodle_id", params.id)
+      .eq("name", participantName);
+    if (error)
+      return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   const { data: participantRows } = await supabase
     .from("participants")

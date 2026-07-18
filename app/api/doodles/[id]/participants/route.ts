@@ -31,6 +31,43 @@ export async function GET(
   });
 }
 
+// Delete a participant entry by name (only while the doodle is open).
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const name = request.nextUrl.searchParams.get("name")?.trim();
+  if (!name)
+    return NextResponse.json({ error: "Name fehlt" }, { status: 400 });
+
+  const supabase = createServerSupabase();
+  const { data: doodle } = await supabase
+    .from("doodles")
+    .select("status")
+    .eq("id", params.id)
+    .single();
+  if (!doodle)
+    return NextResponse.json(
+      { error: "Doodle nicht gefunden" },
+      { status: 404 }
+    );
+  if (doodle.status !== "open")
+    return NextResponse.json(
+      { error: "Dieses Doodle ist geschlossen" },
+      { status: 409 }
+    );
+
+  const { error } = await supabase
+    .from("participants")
+    .delete()
+    .eq("doodle_id", params.id)
+    .ilike("name", name);
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+
 // Create or update a participant entry (upsert by doodle + name).
 export async function POST(
   request: NextRequest,

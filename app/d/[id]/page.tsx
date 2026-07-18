@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { Availability, Role } from "@/lib/types";
 import {
@@ -46,6 +46,7 @@ export default function ParticipantPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetch(`/api/doodles/${id}`, { cache: "no-store" })
@@ -57,31 +58,48 @@ export default function ParticipantPage() {
       .catch(() => setLoadError("Doodle konnte nicht geladen werden"));
   }, [id]);
 
-  async function confirmName() {
-    const trimmedName = nameInput.trim();
-    if (!trimmedName) return;
-    setCheckingName(true);
-    const response = await fetch(
-      `/api/doodles/${id}/participants?name=${encodeURIComponent(trimmedName)}`,
-      { cache: "no-store" }
-    );
-    const result = await response.json();
-    setCheckingName(false);
-    if (result.participant) {
-      setName(result.participant.name);
-      setRoles(result.participant.roles);
-      setCanMd(result.participant.can_md);
-      setMaxPerMonth(result.participant.max_per_month ?? null);
-      setAvailability(result.participant.availability);
-      setEntryLoaded(true);
-    } else {
-      setName(trimmedName);
-      setRoles([]);
-      setCanMd(false);
-      setMaxPerMonth(null);
-      setAvailability({});
-      setEntryLoaded(false);
+  const loadEntry = useCallback(
+    async (rawName: string) => {
+      const trimmedName = rawName.trim();
+      if (!trimmedName) return;
+      setCheckingName(true);
+      const response = await fetch(
+        `/api/doodles/${id}/participants?name=${encodeURIComponent(trimmedName)}`,
+        { cache: "no-store" }
+      );
+      const result = await response.json();
+      setCheckingName(false);
+      if (result.participant) {
+        setName(result.participant.name);
+        setRoles(result.participant.roles);
+        setCanMd(result.participant.can_md);
+        setMaxPerMonth(result.participant.max_per_month ?? null);
+        setAvailability(result.participant.availability);
+        setEntryLoaded(true);
+      } else {
+        setName(trimmedName);
+        setRoles([]);
+        setCanMd(false);
+        setMaxPerMonth(null);
+        setAvailability({});
+        setEntryLoaded(false);
+      }
+    },
+    [id]
+  );
+
+  // Allow deep links like /d/<id>?name=Anna to open an entry directly
+  // (used by the edit button in the admin area).
+  useEffect(() => {
+    const presetName = new URLSearchParams(window.location.search).get("name");
+    if (presetName?.trim()) {
+      setNameInput(presetName.trim());
+      loadEntry(presetName);
     }
+  }, [loadEntry]);
+
+  async function confirmName() {
+    await loadEntry(nameInput);
   }
 
   function changeName() {
@@ -137,6 +155,28 @@ export default function ParticipantPage() {
       return;
     }
     setSaved(true);
+  }
+
+  async function deleteEntry() {
+    if (!name) return;
+    const confirmed = window.confirm(
+      `Bist du sicher, dass du den Eintrag von «${name}» löschen möchtest? Das kann nicht rückgängig gemacht werden.`
+    );
+    if (!confirmed) return;
+    setError(null);
+    setSaved(false);
+    setDeleting(true);
+    const response = await fetch(
+      `/api/doodles/${id}/participants?name=${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    );
+    const result = await response.json();
+    setDeleting(false);
+    if (!response.ok) {
+      setError(result.error ?? "Unbekannter Fehler");
+      return;
+    }
+    changeName();
   }
 
   if (loadError) return <p className="text-red-600">{loadError}</p>;
@@ -343,11 +383,22 @@ export default function ParticipantPage() {
       <button
         type="button"
         onClick={save}
-        disabled={submitting}
+        disabled={submitting || deleting}
         className="w-full rounded bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
       >
         {submitting ? "Wird gespeichert…" : "Speichern"}
       </button>
+
+      {entryLoaded && (
+        <button
+          type="button"
+          onClick={deleteEntry}
+          disabled={submitting || deleting}
+          className="w-full rounded border border-red-300 bg-white px-4 py-3 font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+        >
+          {deleting ? "Wird gelöscht…" : "Eintrag löschen"}
+        </button>
+      )}
     </div>
   );
 }
