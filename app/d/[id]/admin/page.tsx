@@ -54,6 +54,12 @@ export default function AdminPage() {
   const [planDirty, setPlanDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  const [undoSnapshot, setUndoSnapshot] = useState<{
+    plan: Plan;
+    warnings: string[] | null;
+  } | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState(0);
 
   useEffect(() => {
     const storedPassword = sessionStorage.getItem(`doodle-admin-${id}`);
@@ -64,11 +70,36 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Counts down the undo window after a plan regeneration; the snapshot is
+  // dropped once it reaches zero so the toast disappears and the overwrite
+  // becomes final.
+  useEffect(() => {
+    if (!undoSnapshot) return;
+    if (undoSecondsLeft <= 0) {
+      setUndoSnapshot(null);
+      return;
+    }
+    const timer = setTimeout(
+      () => setUndoSecondsLeft((seconds) => seconds - 1),
+      1000
+    );
+    return () => clearTimeout(timer);
+  }, [undoSnapshot, undoSecondsLeft]);
+
+  useEffect(() => {
+    if (!showRegenerateConfirm) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowRegenerateConfirm(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showRegenerateConfirm]);
+
   async function callAdmin(
     action: string,
     passwordOverride?: string,
     extra?: Record<string, unknown>
-  ) {
+  ): Promise<boolean> {
     setError(null);
     setBusy(true);
     const usedPassword = passwordOverride ?? password;
@@ -83,7 +114,7 @@ export default function AdminPage() {
       setError(result.error ?? "Unbekannter Fehler");
       if (response.status === 401)
         sessionStorage.removeItem(`doodle-admin-${id}`);
-      return;
+      return false;
     }
     sessionStorage.setItem(`doodle-admin-${id}`, usedPassword);
     setLoggedIn(true);
@@ -91,6 +122,29 @@ export default function AdminPage() {
     setParticipants(result.participants);
     setPlan(result.doodle.plan);
     setPlanDirty(false);
+    return true;
+  }
+
+  async function handleRegenerateConfirm() {
+    setShowRegenerateConfirm(false);
+    const snapshot = doodle?.plan
+      ? { plan: doodle.plan, warnings: doodle.warnings }
+      : null;
+    const success = await callAdmin("regenerate");
+    if (success && snapshot) {
+      setUndoSnapshot(snapshot);
+      setUndoSecondsLeft(10);
+    }
+  }
+
+  async function handleUndoRegenerate() {
+    if (!undoSnapshot) return;
+    const { plan: previousPlan, warnings: previousWarnings } = undoSnapshot;
+    setUndoSnapshot(null);
+    await callAdmin("updatePlan", undefined, {
+      plan: previousPlan,
+      warnings: previousWarnings,
+    });
   }
 
   function updateAssignment(date: string, updated: DateAssignment) {
@@ -165,7 +219,7 @@ export default function AdminPage() {
               </button>
               <button
                 type="button"
-                onClick={() => callAdmin("regenerate")}
+                onClick={() => setShowRegenerateConfirm(true)}
                 disabled={busy}
                 className="rounded border border-slate-300 bg-white px-4 py-2 hover:bg-slate-100 disabled:opacity-50"
               >
@@ -227,6 +281,102 @@ export default function AdminPage() {
             callAdmin("deleteParticipant", undefined, { participantName });
         }}
       />
+
+      {showRegenerateConfirm && (
+        <RegenerateConfirmDialog
+          planDirty={planDirty}
+          onCancel={() => setShowRegenerateConfirm(false)}
+          onConfirm={handleRegenerateConfirm}
+        />
+      )}
+
+      {undoSnapshot && (
+        <UndoToast
+          secondsLeft={undoSecondsLeft}
+          onUndo={handleUndoRegenerate}
+        />
+      )}
+    </div>
+  );
+}
+
+function RegenerateConfirmDialog({
+  planDirty,
+  onCancel,
+  onConfirm,
+}: {
+  planDirty: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="presentation"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="regenerate-confirm-title"
+        className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2
+          id="regenerate-confirm-title"
+          className="text-lg font-semibold text-slate-900"
+        >
+          Plan wirklich neu generieren?
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Der komplette Plan wird überschrieben und durch eine neue
+          Zuteilung ersetzt. Bereits gespeicherte Änderungen gehen dabei
+          verloren.
+        </p>
+        {planDirty && (
+          <p className="mt-2 text-sm font-medium text-amber-700">
+            Du hast ungespeicherte Änderungen im Plan - auch diese gehen
+            verloren.
+          </p>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-100"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500"
+          >
+            OK, Plan überschreiben
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UndoToast({
+  secondsLeft,
+  onUndo,
+}: {
+  secondsLeft: number;
+  onUndo: () => void;
+}) {
+  return (
+    <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl">
+      <span>Plan wurde neu generiert.</span>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="rounded bg-white/10 px-3 py-1 font-semibold hover:bg-white/20"
+      >
+        Rückgängig ({secondsLeft}s)
+      </button>
     </div>
   );
 }
