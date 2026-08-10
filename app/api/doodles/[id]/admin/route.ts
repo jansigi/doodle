@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { createServerSupabase } from "@/lib/supabase";
-import { generatePlan } from "@/lib/planner";
+import { collectPlanWarnings, generatePlan } from "@/lib/planner";
 import { normalizePlan, normalizeRoles } from "@/lib/migrate";
 import type { Participant, Plan } from "@/lib/types";
 
@@ -62,16 +62,37 @@ export async function POST(
 
   const updates: Record<string, unknown> = {};
 
-  if (action === "close" || action === "regenerate") {
+  if (action === "regenerate") {
     const { plan, warnings } = generatePlan(doodle.dates, participants);
     updates.plan = plan;
     updates.warnings = warnings;
-    if (action === "close") updates.status = "closed";
+  } else if (action === "close") {
+    updates.status = "closed";
+    const existingPlan = normalizePlan(doodle.plan as Plan | null);
+    if (existingPlan) {
+      // Closing never touches an existing plan - only regenerating does.
+      // Availabilities may have changed while the doodle was open, so the
+      // hints are derived again from the unchanged plan.
+      updates.warnings = collectPlanWarnings(
+        doodle.dates,
+        participants,
+        existingPlan
+      );
+    } else {
+      const { plan, warnings } = generatePlan(doodle.dates, participants);
+      updates.plan = plan;
+      updates.warnings = warnings;
+    }
   } else if (action === "reopen") {
     updates.status = "open";
   } else if (action === "updatePlan") {
-    updates.plan = normalizePlan(body.plan as Plan);
-    updates.warnings = body.warnings ?? doodle.warnings;
+    const updatedPlan = normalizePlan(body.plan as Plan);
+    updates.plan = updatedPlan;
+    // Hints always describe the stored plan, so they are derived again after
+    // every manual change instead of being carried over.
+    updates.warnings = updatedPlan
+      ? collectPlanWarnings(doodle.dates, participants, updatedPlan)
+      : [];
   }
 
   if (Object.keys(updates).length > 0) {

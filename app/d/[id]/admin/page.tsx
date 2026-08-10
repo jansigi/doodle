@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import type {
   Availability,
@@ -8,8 +8,18 @@ import type {
   Plan,
   Role,
 } from "@/lib/types";
-import { LINEUP_TARGETS, ROLE_LABELS, formatDateGerman } from "@/lib/roles";
+import {
+  ALL_ROLES,
+  LINEUP_TARGETS,
+  ROLE_LABELS,
+  formatDateGerman,
+} from "@/lib/roles";
+import type { PersonPlanStats } from "@/lib/stats";
+import { collectPlanStats, median } from "@/lib/stats";
+import type { PlanChange } from "@/lib/plan-diff";
+import { collectPlanChanges } from "@/lib/plan-diff";
 import { downloadAvailabilityCsv } from "@/lib/csv";
+import { downloadAvailabilityExcel } from "@/lib/excel";
 import { downloadPlanPdf } from "@/lib/pdf";
 
 interface AdminParticipant {
@@ -44,6 +54,14 @@ const AVAILABILITY_CLASSES: Record<Availability, string> = {
   no: "bg-red-100 text-red-700",
 };
 
+type AdminTab = "plan" | "stats" | "availability";
+
+const TAB_LABELS: Record<AdminTab, string> = {
+  plan: "Plan",
+  stats: "Einsätze",
+  availability: "Verfügbarkeiten",
+};
+
 export default function AdminPage() {
   const { id } = useParams<{ id: string }>();
   const [password, setPassword] = useState("");
@@ -51,14 +69,14 @@ export default function AdminPage() {
   const [doodle, setDoodle] = useState<AdminDoodle | null>(null);
   const [participants, setParticipants] = useState<AdminParticipant[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [planDirty, setPlanDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<AdminTab>("plan");
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
-  const [undoSnapshot, setUndoSnapshot] = useState<{
-    plan: Plan;
-    warnings: string[] | null;
-  } | null>(null);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [undoSnapshot, setUndoSnapshot] = useState<{ plan: Plan } | null>(
+    null
+  );
   const [undoSecondsLeft, setUndoSecondsLeft] = useState(0);
 
   useEffect(() => {
@@ -87,13 +105,15 @@ export default function AdminPage() {
   }, [undoSnapshot, undoSecondsLeft]);
 
   useEffect(() => {
-    if (!showRegenerateConfirm) return;
+    if (!showRegenerateConfirm && !showSaveConfirm) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setShowRegenerateConfirm(false);
+      if (event.key !== "Escape") return;
+      setShowRegenerateConfirm(false);
+      setShowSaveConfirm(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showRegenerateConfirm]);
+  }, [showRegenerateConfirm, showSaveConfirm]);
 
   async function callAdmin(
     action: string,
@@ -121,15 +141,17 @@ export default function AdminPage() {
     setDoodle(result.doodle);
     setParticipants(result.participants);
     setPlan(result.doodle.plan);
-    setPlanDirty(false);
     return true;
+  }
+
+  async function handleSaveConfirm() {
+    setShowSaveConfirm(false);
+    await callAdmin("updatePlan", undefined, { plan });
   }
 
   async function handleRegenerateConfirm() {
     setShowRegenerateConfirm(false);
-    const snapshot = doodle?.plan
-      ? { plan: doodle.plan, warnings: doodle.warnings }
-      : null;
+    const snapshot = doodle?.plan ? { plan: doodle.plan } : null;
     const success = await callAdmin("regenerate");
     if (success && snapshot) {
       setUndoSnapshot(snapshot);
@@ -139,18 +161,15 @@ export default function AdminPage() {
 
   async function handleUndoRegenerate() {
     if (!undoSnapshot) return;
-    const { plan: previousPlan, warnings: previousWarnings } = undoSnapshot;
+    const { plan: previousPlan } = undoSnapshot;
     setUndoSnapshot(null);
-    await callAdmin("updatePlan", undefined, {
-      plan: previousPlan,
-      warnings: previousWarnings,
-    });
+    // The hints belonging to the restored plan are derived server-side.
+    await callAdmin("updatePlan", undefined, { plan: previousPlan });
   }
 
   function updateAssignment(date: string, updated: DateAssignment) {
     if (!plan) return;
     setPlan({ ...plan, [date]: updated });
-    setPlanDirty(true);
   }
 
   if (!loggedIn) {
@@ -180,8 +199,15 @@ export default function AdminPage() {
 
   if (!doodle) return <p className="text-slate-500">Lädt…</p>;
 
+  // Everything the admin changed since the last save. Editing a slot back to
+  // its stored value makes it disappear from this list again.
+  const planChanges = collectPlanChanges(doodle.dates, doodle.plan, plan);
+
   return (
-    <div className="space-y-10">
+    // Flex column instead of space-y: the fixed overlays below are out of
+    // flow, so they get no gap - `space-y-*` would give them a top margin and
+    // shift the whole backdrop down.
+    <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{doodle.title}</h1>
@@ -205,7 +231,9 @@ export default function AdminPage() {
               disabled={busy}
               className="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
             >
-              Schliessen &amp; Plan erstellen
+              {/* An existing plan survives closing - only the first close
+                  creates one. */}
+              {plan ? "Schliessen" : "Schliessen & Plan erstellen"}
             </button>
           ) : (
             <>
@@ -217,76 +245,108 @@ export default function AdminPage() {
               >
                 Wieder öffnen
               </button>
+              {/* Amber, like the confirmation dialog: this overwrites the
+                  whole plan and should not read as a harmless action. */}
               <button
                 type="button"
                 onClick={() => setShowRegenerateConfirm(true)}
                 disabled={busy}
-                className="rounded border border-slate-300 bg-white px-4 py-2 hover:bg-slate-100 disabled:opacity-50"
+                className="rounded border border-amber-300 bg-amber-50 px-4 py-2 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
               >
                 Plan neu generieren
               </button>
             </>
           )}
-          {plan && (
-            <>
-              {planDirty && (
-                <button
-                  type="button"
-                  onClick={() => callAdmin("updatePlan", undefined, { plan })}
-                  disabled={busy}
-                  className="rounded bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-500 disabled:opacity-50"
-                >
-                  Änderungen speichern
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => downloadPlanPdf(doodle.title, plan)}
-                className="rounded bg-slate-800 px-4 py-2 font-semibold text-white hover:bg-slate-700"
-              >
-                PDF herunterladen
-              </button>
-            </>
+          {planChanges.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowSaveConfirm(true)}
+              disabled={busy}
+              className="rounded bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+            >
+              {planChanges.length === 1
+                ? "1 Änderung speichern"
+                : `${planChanges.length} Änderungen speichern`}
+            </button>
           )}
         </div>
       </div>
 
       {error && <p className="text-red-600">{error}</p>}
 
-      {doodle.warnings && doodle.warnings.length > 0 && (
-        <WarningsAccordion warnings={doodle.warnings} />
-      )}
-
+      {/* Without a plan there is only one thing to look at, so the tab bar
+          would just be noise. */}
       {plan && (
-        <PlanEditor
-          dates={doodle.dates}
-          plan={plan}
-          participants={participants}
-          onChange={updateAssignment}
-        />
+        <TabBar active={activeTab} onSelect={setActiveTab} />
       )}
 
-      <AvailabilityMatrix
-        title={doodle.title}
-        doodleId={doodle.id}
-        status={doodle.status}
-        dates={doodle.dates}
-        participants={participants}
-        busy={busy}
-        onDelete={(participantName) => {
-          const confirmed = window.confirm(
-            `Bist du sicher, dass du den Eintrag von «${participantName}» löschen möchtest? Das kann nicht rückgängig gemacht werden.`
-          );
-          if (confirmed)
-            callAdmin("deleteParticipant", undefined, { participantName });
-        }}
-      />
+      {plan && activeTab === "plan" && (
+        <div
+          role="tabpanel"
+          id="panel-plan"
+          aria-labelledby="tab-plan"
+          className="space-y-6"
+        >
+          {doodle.warnings && doodle.warnings.length > 0 && (
+            <WarningsAccordion warnings={doodle.warnings} />
+          )}
+          <PlanEditor
+            dates={doodle.dates}
+            plan={plan}
+            participants={participants}
+            onDownloadPdf={() => downloadPlanPdf(doodle.title, plan)}
+            onChange={updateAssignment}
+          />
+        </div>
+      )}
+
+      {plan && activeTab === "stats" && (
+        <div role="tabpanel" id="panel-stats" aria-labelledby="tab-stats">
+          <PlanStatistics
+            dates={doodle.dates}
+            plan={plan}
+            participants={participants}
+          />
+        </div>
+      )}
+
+      {(!plan || activeTab === "availability") && (
+        <div
+          role="tabpanel"
+          id="panel-availability"
+          aria-labelledby="tab-availability"
+        >
+          <AvailabilityMatrix
+            title={doodle.title}
+            doodleId={doodle.id}
+            status={doodle.status}
+            dates={doodle.dates}
+            participants={participants}
+            busy={busy}
+            onDelete={(participantName) => {
+              const confirmed = window.confirm(
+                `Bist du sicher, dass du den Eintrag von «${participantName}» löschen möchtest? Das kann nicht rückgängig gemacht werden.`
+              );
+              if (confirmed)
+                callAdmin("deleteParticipant", undefined, { participantName });
+            }}
+          />
+        </div>
+      )}
 
       {showRegenerateConfirm && (
         <RegenerateConfirmDialog
-          planDirty={planDirty}
+          changeCount={planChanges.length}
           onCancel={() => setShowRegenerateConfirm(false)}
           onConfirm={handleRegenerateConfirm}
+        />
+      )}
+
+      {showSaveConfirm && (
+        <SaveConfirmDialog
+          changes={planChanges}
+          onCancel={() => setShowSaveConfirm(false)}
+          onConfirm={handleSaveConfirm}
         />
       )}
 
@@ -300,12 +360,68 @@ export default function AdminPage() {
   );
 }
 
+// The three views of the admin page are large tables - showing them one at a
+// time keeps the page scannable.
+function TabBar({
+  active,
+  onSelect,
+}: {
+  active: AdminTab;
+  onSelect: (tab: AdminTab) => void;
+}) {
+  const tabs: AdminTab[] = ["plan", "stats", "availability"];
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    const offset =
+      event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (offset === 0) return;
+    event.preventDefault();
+    const next = (tabs.indexOf(active) + offset + tabs.length) % tabs.length;
+    onSelect(tabs[next]);
+    document.getElementById(`tab-${tabs[next]}`)?.focus();
+  }
+
+  return (
+    <div className="border-b border-slate-200">
+      <div
+        role="tablist"
+        aria-label="Ansicht"
+        onKeyDown={handleKeyDown}
+        className="-mb-px flex gap-1 overflow-x-auto"
+      >
+        {tabs.map((tab) => {
+          const selected = tab === active;
+          return (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              id={`tab-${tab}`}
+              aria-selected={selected}
+              aria-controls={`panel-${tab}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onSelect(tab)}
+              className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                selected
+                  ? "border-indigo-600 text-indigo-700"
+                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800"
+              }`}
+            >
+              {TAB_LABELS[tab]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RegenerateConfirmDialog({
-  planDirty,
+  changeCount,
   onCancel,
   onConfirm,
 }: {
-  planDirty: boolean;
+  changeCount: number;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -333,10 +449,11 @@ function RegenerateConfirmDialog({
           Zuteilung ersetzt. Bereits gespeicherte Änderungen gehen dabei
           verloren.
         </p>
-        {planDirty && (
+        {changeCount > 0 && (
           <p className="mt-2 text-sm font-medium text-amber-700">
-            Du hast ungespeicherte Änderungen im Plan - auch diese gehen
-            verloren.
+            {changeCount === 1
+              ? "Du hast 1 ungespeicherte Änderung im Plan - auch diese geht verloren."
+              : `Du hast ${changeCount} ungespeicherte Änderungen im Plan - auch diese gehen verloren.`}
           </p>
         )}
         <div className="mt-5 flex justify-end gap-2">
@@ -353,6 +470,79 @@ function RegenerateConfirmDialog({
             className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500"
           >
             OK, Plan überschreiben
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Saving is confirmed the same way as regenerating, but here the dialog can
+// name every change instead of just warning about them.
+function SaveConfirmDialog({
+  changes,
+  onCancel,
+  onConfirm,
+}: {
+  changes: PlanChange[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="presentation"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onCancel}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="save-confirm-title"
+        className="flex w-full max-w-lg flex-col rounded-lg bg-white p-6 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2
+          id="save-confirm-title"
+          className="text-lg font-semibold text-slate-900"
+        >
+          {changes.length === 1
+            ? "1 Änderung speichern?"
+            : `${changes.length} Änderungen speichern?`}
+        </h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Diese Anpassungen werden in den Plan übernommen. Die Hinweise werden
+          dabei neu berechnet.
+        </p>
+        <ul className="mt-4 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200">
+          {changes.map((change, index) => (
+            <li
+              key={`${change.date}-${change.slot}-${index}`}
+              className="flex flex-wrap items-baseline gap-x-2 px-3 py-2 text-sm"
+            >
+              <span className="whitespace-nowrap font-medium text-slate-800">
+                {formatDateGerman(change.date).slice(0, -5)}
+              </span>
+              <span className="whitespace-nowrap text-xs uppercase tracking-wider text-slate-400">
+                {change.slot}
+              </span>
+              <span className="text-slate-600">{change.description}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-100"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500"
+          >
+            OK, speichern
           </button>
         </div>
       </div>
@@ -412,16 +602,30 @@ function PlanEditor({
   dates,
   plan,
   participants,
+  onDownloadPdf,
   onChange,
 }: {
   dates: string[];
   plan: Plan;
   participants: AdminParticipant[];
+  onDownloadPdf: () => void;
   onChange: (date: string, updated: DateAssignment) => void;
 }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-xl font-semibold">Plan</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-500">
+          {dates.length} Termine · Änderungen werden erst mit «Änderungen
+          speichern» übernommen
+        </p>
+        <button
+          type="button"
+          onClick={onDownloadPdf}
+          className="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+        >
+          PDF herunterladen
+        </button>
+      </div>
       {/* Full-bleed: the plan table uses the entire viewport width so all
           role columns stay visible. */}
       <div className="relative left-1/2 w-screen -translate-x-1/2 px-4 sm:px-6">
@@ -641,6 +845,220 @@ function PlanRow({
   );
 }
 
+// Every column of the statistics table can be sorted by.
+type StatsColumn = "name" | "dateCount" | "mdCount" | Role;
+
+function statsValue(person: PersonPlanStats, column: StatsColumn): number {
+  if (column === "dateCount") return person.dateCount;
+  if (column === "mdCount") return person.mdCount;
+  if (column === "name") return 0;
+  return person.roleCounts[column];
+}
+
+function StatsHeaderCell({
+  column,
+  label,
+  align,
+  sort,
+  onSort,
+}: {
+  column: StatsColumn;
+  label: string;
+  align: "left" | "center";
+  sort: { column: StatsColumn; ascending: boolean };
+  onSort: (column: StatsColumn) => void;
+}) {
+  const active = sort.column === column;
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        active ? (sort.ascending ? "ascending" : "descending") : "none"
+      }
+      className="whitespace-nowrap px-3 py-3 font-semibold"
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className={`flex w-full items-center gap-1 uppercase tracking-wider transition-colors hover:text-slate-800 ${
+          align === "center" ? "justify-center" : "justify-start"
+        } ${active ? "text-indigo-700" : ""}`}
+      >
+        {label}
+        <span
+          aria-hidden
+          className={`text-[10px] ${active ? "" : "text-slate-300"}`}
+        >
+          {active ? (sort.ascending ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+// Overview of how often each person plays which instrument in the current
+// plan. It reads from the edited plan state, so manual changes above are
+// reflected immediately.
+function PlanStatistics({
+  dates,
+  plan,
+  participants,
+}: {
+  dates: string[];
+  plan: Plan;
+  participants: AdminParticipant[];
+}) {
+  // Names ascending by default, counts descending on first click - that is
+  // the direction someone clicking a count column is looking for.
+  const [sort, setSort] = useState<{ column: StatsColumn; ascending: boolean }>(
+    { column: "name", ascending: true }
+  );
+  const stats = collectPlanStats(
+    plan,
+    dates,
+    participants.map((participant) => participant.name)
+  );
+  if (stats.length === 0) return null;
+
+  const dateCounts = stats.map((person) => person.dateCount);
+  const maxDateCount = Math.max(...dateCounts);
+  const totalAssignments = dateCounts.reduce((sum, count) => sum + count, 0);
+  const medianCount = median(dateCounts);
+
+  const sortedStats = [...stats].sort((a, b) => {
+    const direction = sort.ascending ? 1 : -1;
+    if (sort.column === "name")
+      return direction * a.name.localeCompare(b.name, "de-CH");
+    const difference = statsValue(a, sort.column) - statsValue(b, sort.column);
+    // Equal counts stay alphabetical so the order never looks random.
+    return difference !== 0
+      ? direction * difference
+      : a.name.localeCompare(b.name, "de-CH");
+  });
+
+  function toggleSort(column: StatsColumn) {
+    setSort((current) =>
+      current.column === column
+        ? { column, ascending: !current.ascending }
+        : { column, ascending: column === "name" }
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      <p className="text-sm text-slate-500">
+        {totalAssignments} Einsätze auf {stats.length} Personen · Median{" "}
+        {Number.isInteger(medianCount)
+          ? medianCount
+          : medianCount.toFixed(1)}{" "}
+        pro Person
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+              <StatsHeaderCell
+                column="name"
+                label="Person"
+                align="left"
+                sort={sort}
+                onSort={toggleSort}
+              />
+              <StatsHeaderCell
+                column="dateCount"
+                label="Einsätze"
+                align="left"
+                sort={sort}
+                onSort={toggleSort}
+              />
+              {ALL_ROLES.map((role) => (
+                <StatsHeaderCell
+                  key={role}
+                  column={role}
+                  label={ROLE_LABELS[role]}
+                  align="center"
+                  sort={sort}
+                  onSort={toggleSort}
+                />
+              ))}
+              <StatsHeaderCell
+                column="mdCount"
+                label="MD"
+                align="center"
+                sort={sort}
+                onSort={toggleSort}
+              />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sortedStats.map((person) => (
+              <tr
+                key={person.name}
+                className="transition-colors hover:bg-slate-50/70"
+              >
+                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">
+                  {person.name}
+                  {person.isGuest && (
+                    <span className="ml-1 rounded bg-slate-100 px-1 text-xs font-normal text-slate-500">
+                      Gast
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-5 text-right font-semibold tabular-nums ${
+                        person.dateCount === 0
+                          ? "text-slate-300"
+                          : "text-slate-800"
+                      }`}
+                    >
+                      {person.dateCount}
+                    </span>
+                    {/* Bar makes an unfair distribution visible at a glance. */}
+                    <span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
+                      <span
+                        className="block h-full rounded-full bg-indigo-500"
+                        style={{
+                          width: `${
+                            maxDateCount === 0
+                              ? 0
+                              : (person.dateCount / maxDateCount) * 100
+                          }%`,
+                        }}
+                      />
+                    </span>
+                  </div>
+                </td>
+                {ALL_ROLES.map((role) => (
+                  <StatCountCell key={role} count={person.roleCounts[role]} />
+                ))}
+                <StatCountCell count={person.mdCount} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-slate-500">
+        «Einsätze» zählt Termine, nicht Slots: MD und A-Gitarre in Kombination
+        mit einer Gesangsrolle ergeben keinen zusätzlichen Einsatz.
+      </p>
+    </section>
+  );
+}
+
+function StatCountCell({ count }: { count: number }) {
+  return (
+    <td className="px-3 py-2 text-center tabular-nums">
+      {count === 0 ? (
+        <span className="text-slate-300">·</span>
+      ) : (
+        <span className="font-medium text-slate-800">{count}</span>
+      )}
+    </td>
+  );
+}
+
 // Availability is shown inside the control itself: a colored status dot plus
 // a soft tint, so an assigned person reads as one coherent pill.
 const SELECT_STATUS_STYLES: Record<
@@ -766,6 +1184,82 @@ function PersonSelect({
   );
 }
 
+// Export picker for the availability table: Excel by default, CSV for
+// whoever needs the raw data.
+function DownloadMenu({
+  busy,
+  onSelect,
+}: {
+  busy: boolean;
+  onSelect: (format: "excel" | "csv") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node))
+        setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const options: Array<{ format: "excel" | "csv"; label: string; hint: string }> =
+    [
+      { format: "excel", label: "Excel", hint: ".xlsx" },
+      { format: "csv", label: "CSV", hint: ".csv" },
+    ];
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+      >
+        {busy ? "Datei wird erstellt…" : "Herunterladen"}
+        <span aria-hidden className="text-xs text-slate-400">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-10 mt-1 w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {options.map((option) => (
+            <button
+              key={option.format}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onSelect(option.format);
+              }}
+              className="flex w-full items-baseline justify-between px-3 py-2 text-left text-sm hover:bg-slate-100"
+            >
+              {option.label}
+              <span className="text-xs text-slate-400">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AvailabilityMatrix({
   title,
   doodleId,
@@ -783,21 +1277,30 @@ function AvailabilityMatrix({
   busy: boolean;
   onDelete: (participantName: string) => void;
 }) {
+  const [exporting, setExporting] = useState(false);
   if (participants.length === 0)
     return (
       <p className="text-slate-500">Noch hat sich niemand eingetragen.</p>
     );
+
+  async function handleDownload(format: "excel" | "csv") {
+    setExporting(true);
+    try {
+      if (format === "excel")
+        await downloadAvailabilityExcel(title, dates, participants);
+      else downloadAvailabilityCsv(title, dates, participants);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-semibold">Verfügbarkeiten</h2>
-        <button
-          type="button"
-          onClick={() => downloadAvailabilityCsv(title, dates, participants)}
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
-        >
-          CSV herunterladen
-        </button>
+        <p className="text-sm text-slate-500">
+          {participants.length} Personen · {dates.length} Termine
+        </p>
+        <DownloadMenu busy={exporting} onSelect={handleDownload} />
       </div>
       <div className="overflow-x-auto rounded border border-slate-200 bg-white">
         <table className="w-full text-sm">

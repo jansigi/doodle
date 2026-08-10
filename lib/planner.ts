@@ -5,7 +5,12 @@ import type {
   Role,
 } from "./types";
 import { emptyDateAssignment } from "./types";
-import { LINEUP_TARGETS, ROLE_LABELS, formatDateGerman } from "./roles";
+import {
+  INSTRUMENT_ROLES,
+  LINEUP_TARGETS,
+  ROLE_LABELS,
+  formatDateGerman,
+} from "./roles";
 
 interface PlannerState {
   assignmentCounts: Map<string, number>;
@@ -110,9 +115,7 @@ function recordAssignment(
   participant: Participant,
   date: string,
   dateIndex: number,
-  state: PlannerState,
-  warnings: string[],
-  roleLabel: string
+  state: PlannerState
 ): void {
   state.assignmentCounts.set(
     participant.name,
@@ -121,22 +124,94 @@ function recordAssignment(
   state.lastAssignedDateIndex.set(participant.name, dateIndex);
   const monthCounts =
     state.monthlyAssignmentCounts.get(participant.name) ?? new Map<string, number>();
-  const newMonthCount = (monthCounts.get(monthOf(date)) ?? 0) + 1;
-  monthCounts.set(monthOf(date), newMonthCount);
+  monthCounts.set(monthOf(date), (monthCounts.get(monthOf(date)) ?? 0) + 1);
   state.monthlyAssignmentCounts.set(participant.name, monthCounts);
-  if (participant.availability[date] === "maybe") {
-    warnings.push(
-      `${formatDateGerman(date)}: ${participant.name} (${roleLabel}) ist nur «vielleicht» verfügbar`
-    );
-  }
-  if (
-    participant.max_per_month != null &&
-    newMonthCount > participant.max_per_month
-  ) {
-    warnings.push(
-      `${formatDateGerman(date)}: ${participant.name} (${roleLabel}) ist öfter eingeteilt als gewünscht (max. ${participant.max_per_month}×/Monat)`
-    );
-  }
+}
+
+// Every slot of a date with the role it stands for. A-Guitar may double with
+// a singing role, so a person can show up twice for the same date.
+function assignmentSlots(assignment: DateAssignment): Array<[Role, string]> {
+  const slots: Array<[Role, string | null]> = [
+    ["leader", assignment.leader],
+    ["bass", assignment.bass],
+    ["drums", assignment.drums],
+    ["keys", assignment.keys],
+    ["aguitar", assignment.aguitar],
+    ...assignment.vocals.map((name): [Role, string] => ["vocal", name]),
+    ...assignment.egit.map((name): [Role, string] => ["egit", name]),
+  ];
+  return slots.filter((slot): slot is [Role, string] => slot[1] !== null);
+}
+
+// Derives the hints from a finished plan instead of collecting them while
+// assigning, so a manually edited plan produces exactly the same warnings as
+// a freshly generated one. Only things that block a celebration are reported:
+// a missing instrument, a missing MD and people scheduled more often than
+// they wished. Singers and A-Guitar are flexible enough to be left open, and
+// «vielleicht» is a normal case rather than a problem.
+export function collectPlanWarnings(
+  dates: string[],
+  participants: Participant[],
+  plan: Plan
+): string[] {
+  const sortedDates = [...dates].sort();
+  const participantsByName = new Map(
+    participants.map((participant) => [participant.name, participant])
+  );
+  const warnings: string[] = [];
+  // name -> month -> assignments so far, walked in date order.
+  const monthlyCounts = new Map<string, Map<string, number>>();
+
+  sortedDates.forEach((date) => {
+    const assignment = plan[date];
+    if (!assignment) return;
+    const namesOnThisDate = new Set<string>();
+
+    assignmentSlots(assignment).forEach(([role, name]) => {
+      // Guests are not participants and carry no wishes to check.
+      const participant = participantsByName.get(name);
+      if (!participant) return;
+      // A-Guitar doubling with a singing role stays a single assignment.
+      if (namesOnThisDate.has(name)) return;
+      namesOnThisDate.add(name);
+      const counts = monthlyCounts.get(name) ?? new Map<string, number>();
+      const monthCount = (counts.get(monthOf(date)) ?? 0) + 1;
+      counts.set(monthOf(date), monthCount);
+      monthlyCounts.set(name, counts);
+      if (
+        participant.max_per_month != null &&
+        monthCount > participant.max_per_month
+      ) {
+        warnings.push(
+          `${formatDateGerman(date)}: ${name} (${ROLE_LABELS[role]}) ist öfter eingeteilt als gewünscht (max. ${participant.max_per_month}×/Monat)`
+        );
+      }
+    });
+
+    // Covers both cases: nobody eligible was available and the admin cleared
+    // the slot by hand.
+    if (assignment.md === null)
+      warnings.push(`${formatDateGerman(date)}: MD fehlt`);
+
+    const instrumentCounts: Partial<Record<Role, number>> = {
+      bass: assignment.bass ? 1 : 0,
+      egit: assignment.egit.length,
+      drums: assignment.drums ? 1 : 0,
+      keys: assignment.keys ? 1 : 0,
+    };
+    INSTRUMENT_ROLES.forEach((role) => {
+      const count = instrumentCounts[role] ?? 0;
+      const target = LINEUP_TARGETS[role];
+      if (count >= target.min) return;
+      warnings.push(
+        target.min === 1
+          ? `${formatDateGerman(date)}: ${ROLE_LABELS[role]} fehlt`
+          : `${formatDateGerman(date)}: Nur ${count} von ${target.min} ${ROLE_LABELS[role]} gefunden`
+      );
+    });
+  });
+
+  return warnings.sort();
 }
 
 export function generatePlan(
@@ -150,7 +225,6 @@ export function generatePlan(
     mdCounts: new Map(),
     monthlyAssignmentCounts: new Map(),
   };
-  const warnings: string[] = [];
   const plan: Plan = Object.fromEntries(
     sortedDates.map((date) => [date, emptyDateAssignment()])
   );
@@ -191,14 +265,7 @@ export function generatePlan(
         );
         if (candidate === null) return;
         assignToRole(assignment, role, candidate.name);
-        recordAssignment(
-          candidate,
-          date,
-          dateIndex,
-          state,
-          warnings,
-          ROLE_LABELS[role]
-        );
+        recordAssignment(candidate, date, dateIndex, state);
       });
     });
   });
@@ -225,14 +292,7 @@ export function generatePlan(
         );
         if (candidate === null) return;
         assignToRole(assignment, role, candidate.name);
-        recordAssignment(
-          candidate,
-          date,
-          dateIndex,
-          state,
-          warnings,
-          ROLE_LABELS[role]
-        );
+        recordAssignment(candidate, date, dateIndex, state);
       });
     });
   });
@@ -278,14 +338,7 @@ export function generatePlan(
     );
     if (standalone) {
       assignment.aguitar = standalone.name;
-      recordAssignment(
-        standalone,
-        date,
-        dateIndex,
-        state,
-        warnings,
-        ROLE_LABELS.aguitar
-      );
+      recordAssignment(standalone, date, dateIndex, state);
     }
   });
 
@@ -320,34 +373,11 @@ export function generatePlan(
     if (chosen) {
       assignment.md = chosen.name;
       state.mdCounts.set(chosen.name, (state.mdCounts.get(chosen.name) ?? 0) + 1);
-    } else {
-      warnings.push(`${formatDateGerman(date)}: Kein MD verfügbar`);
     }
   });
 
-  // Completeness warnings: report every slot below its required minimum.
-  sortedDates.forEach((date) => {
-    const assignment = plan[date];
-    const counts: Record<Role, number> = {
-      leader: assignment.leader ? 1 : 0,
-      vocal: assignment.vocals.length,
-      bass: assignment.bass ? 1 : 0,
-      egit: assignment.egit.length,
-      aguitar: assignment.aguitar ? 1 : 0,
-      drums: assignment.drums ? 1 : 0,
-      keys: assignment.keys ? 1 : 0,
-    };
-    (Object.keys(counts) as Role[])
-      .filter((role) => counts[role] < LINEUP_TARGETS[role].min)
-      .forEach((role) => {
-        const target = LINEUP_TARGETS[role];
-        warnings.push(
-          target.min === 1
-            ? `${formatDateGerman(date)}: ${ROLE_LABELS[role]} fehlt`
-            : `${formatDateGerman(date)}: Nur ${counts[role]} von ${target.min} ${ROLE_LABELS[role]} gefunden`
-        );
-      });
-  });
-
-  return { plan, warnings: warnings.sort() };
+  return {
+    plan,
+    warnings: collectPlanWarnings(sortedDates, participants, plan),
+  };
 }
