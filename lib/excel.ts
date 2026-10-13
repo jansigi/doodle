@@ -1,5 +1,5 @@
-import type { Availability, Role } from "./types";
-import { ROLE_LABELS, formatDateGerman } from "./roles";
+import type { Availability, LineupConfig, RoleId } from "./types";
+import { formatDateGerman, roleLabel } from "./roles";
 
 const AVAILABILITY_LABELS: Record<Availability, string> = {
   yes: "Ja",
@@ -22,7 +22,7 @@ const AVAILABILITY_FONTS: Record<Availability, string> = {
 
 interface AvailabilityParticipant {
   name: string;
-  roles: Role[];
+  roles: RoleId[];
   can_md: boolean;
   max_per_month: number | null;
   availability: Record<string, Availability>;
@@ -35,7 +35,8 @@ function fileBaseName(title: string): string {
 export async function downloadAvailabilityExcel(
   title: string,
   dates: string[],
-  participants: AvailabilityParticipant[]
+  participants: AvailabilityParticipant[],
+  config: LineupConfig
 ): Promise<void> {
   // Loaded on demand - the library is far bigger than the admin page itself.
   const ExcelJS = (await import("exceljs")).default;
@@ -72,7 +73,7 @@ export async function downloadAvailabilityExcel(
   participants.forEach((participant) => {
     const row = sheet.addRow({
       name: participant.name,
-      roles: participant.roles.map((role) => ROLE_LABELS[role]).join(", "),
+      roles: participant.roles.map((role) => roleLabel(config, role)).join(", "),
       md: participant.can_md ? "Ja" : "Nein",
       maxPerMonth: participant.max_per_month ?? "",
       ...Object.fromEntries(

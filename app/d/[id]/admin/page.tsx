@@ -5,14 +5,16 @@ import { useParams } from "next/navigation";
 import type {
   Availability,
   DateAssignment,
+  LineupConfig,
   Plan,
-  Role,
+  RoleConfig,
+  RoleId,
 } from "@/lib/types";
 import {
-  ALL_ROLES,
-  LINEUP_TARGETS,
-  ROLE_LABELS,
   formatDateGerman,
+  mdEnabled,
+  roleLabel,
+  rolesCombinable,
 } from "@/lib/roles";
 import type { PersonPlanStats } from "@/lib/stats";
 import { collectPlanStats, median } from "@/lib/stats";
@@ -24,7 +26,7 @@ import { downloadPlanPdf } from "@/lib/pdf";
 
 interface AdminParticipant {
   name: string;
-  roles: Role[];
+  roles: RoleId[];
   can_md: boolean;
   max_per_month: number | null;
   availability: Record<string, Availability>;
@@ -35,6 +37,7 @@ interface AdminDoodle {
   title: string;
   status: "open" | "closed";
   dates: string[];
+  config: LineupConfig;
   plan: Plan | null;
   warnings: string[] | null;
 }
@@ -201,7 +204,12 @@ export default function AdminPage() {
 
   // Everything the admin changed since the last save. Editing a slot back to
   // its stored value makes it disappear from this list again.
-  const planChanges = collectPlanChanges(doodle.dates, doodle.plan, plan);
+  const planChanges = collectPlanChanges(
+    doodle.dates,
+    doodle.plan,
+    plan,
+    doodle.config
+  );
 
   return (
     // Flex column instead of space-y: the fixed overlays below are out of
@@ -292,9 +300,12 @@ export default function AdminPage() {
           )}
           <PlanEditor
             dates={doodle.dates}
+            config={doodle.config}
             plan={plan}
             participants={participants}
-            onDownloadPdf={() => downloadPlanPdf(doodle.title, plan)}
+            onDownloadPdf={() =>
+              downloadPlanPdf(doodle.title, plan, doodle.config)
+            }
             onChange={updateAssignment}
           />
         </div>
@@ -304,6 +315,7 @@ export default function AdminPage() {
         <div role="tabpanel" id="panel-stats" aria-labelledby="tab-stats">
           <PlanStatistics
             dates={doodle.dates}
+            config={doodle.config}
             plan={plan}
             participants={participants}
           />
@@ -321,6 +333,7 @@ export default function AdminPage() {
             doodleId={doodle.id}
             status={doodle.status}
             dates={doodle.dates}
+            config={doodle.config}
             participants={participants}
             busy={busy}
             onDelete={(participantName) => {
@@ -600,17 +613,21 @@ function WarningsAccordion({ warnings }: { warnings: string[] }) {
 
 function PlanEditor({
   dates,
+  config,
   plan,
   participants,
   onDownloadPdf,
   onChange,
 }: {
   dates: string[];
+  config: LineupConfig;
   plan: Plan;
   participants: AdminParticipant[];
   onDownloadPdf: () => void;
   onChange: (date: string, updated: DateAssignment) => void;
 }) {
+  const showMd = mdEnabled(config);
+  const columnCount = config.roles.length + (showMd ? 1 : 0);
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -630,18 +647,20 @@ function PlanEditor({
           role columns stay visible. */}
       <div className="relative left-1/2 w-screen -translate-x-1/2 px-4 sm:px-6">
         <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[1250px] text-sm">
+          <table
+            className="w-full text-sm"
+            // Enough room per column for a name with its status dot.
+            style={{ minWidth: `${(columnCount + 1) * 140}px` }}
+          >
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <th className="px-3 py-3 font-semibold">Datum</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.leader}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.vocal}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.bass}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.egit}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.aguitar}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.drums}</th>
-              <th className="px-3 py-3 font-semibold">{ROLE_LABELS.keys}</th>
-              <th className="px-3 py-3 font-semibold">MD</th>
+              {config.roles.map((role) => (
+                <th key={role.id} className="px-3 py-3 font-semibold">
+                  {role.label}
+                </th>
+              ))}
+              {showMd && <th className="px-3 py-3 font-semibold">MD</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -652,6 +671,8 @@ function PlanEditor({
                 <PlanRow
                   key={date}
                   date={date}
+                  config={config}
+                  showMd={showMd}
                   assignment={assignment}
                   participants={participants}
                   onChange={(updated) => onChange(date, updated)}
@@ -683,96 +704,78 @@ function PlanEditor({
 
 function PlanRow({
   date,
+  config,
+  showMd,
   assignment,
   participants,
   onChange,
 }: {
   date: string;
+  config: LineupConfig;
+  showMd: boolean;
   assignment: DateAssignment;
   participants: AdminParticipant[];
   onChange: (updated: DateAssignment) => void;
 }) {
-  const assigned = [
-    assignment.leader,
-    assignment.bass,
-    assignment.drums,
-    assignment.keys,
-    ...assignment.vocals,
-    ...assignment.egit,
-  ].filter((name): name is string => name !== null);
-  const aguitarName = assignment.aguitar ?? null;
-
-  // Only people on an instrument slot can be MD (A-Guitar does not qualify).
-  const instrumentNames = [
-    assignment.bass,
-    assignment.drums,
-    assignment.keys,
-    ...assignment.egit,
-  ].filter((name): name is string => name !== null);
-  const mdCandidates = participants.filter(
-    (participant) =>
-      instrumentNames.includes(participant.name) && participant.can_md
+  const slots = config.roles.flatMap((role) =>
+    (assignment.slots[role.id] ?? []).map((name, index) => ({
+      role,
+      index,
+      name,
+    }))
   );
 
-  function singleSelect(role: "leader" | "bass" | "drums" | "keys") {
-    // A-Guitar may double with a singing role, but never with another
-    // instrument - so the acoustic guitarist is blocked for instrument slots.
-    const aguitarBlocked =
-      role === "bass" || role === "drums" || role === "keys"
-        ? [aguitarName].filter((name): name is string => name !== null)
-        : [];
-    return (
-      <PersonSelect
-        date={date}
-        role={role}
-        value={assignment[role]}
-        participants={participants}
-        excluded={[
-          ...assigned.filter((name) => name !== assignment[role]),
-          ...aguitarBlocked,
-        ]}
-        onSelect={(name) => {
-          const updated = { ...assignment, [role]: name };
-          if (assignment[role] === assignment.md && name !== assignment[role])
-            updated.md = null;
-          onChange(updated);
-        }}
-      />
+  function holdsMdSlot(updated: DateAssignment, name: string): boolean {
+    return config.roles.some(
+      (role) => role.canMd && (updated.slots[role.id] ?? []).includes(name)
     );
   }
 
-  function multiSelect(role: "vocal" | "egit", values: string[]) {
-    const slotCount = Math.max(LINEUP_TARGETS[role].max, values.length);
-    const aguitarBlocked =
-      role === "egit"
-        ? [aguitarName].filter((name): name is string => name !== null)
-        : [];
+  // Only people on an MD-eligible slot can be MD.
+  const mdCandidates = participants.filter(
+    (participant) =>
+      participant.can_md && holdsMdSlot(assignment, participant.name)
+  );
+
+  function roleSelects(role: RoleConfig) {
+    const values = assignment.slots[role.id] ?? [];
+    const slotCount = Math.max(role.max, values.length);
     return (
       <div className="space-y-1">
         {Array.from({ length: slotCount }).map((_, index) => (
           <PersonSelect
             key={index}
             date={date}
-            role={role}
+            role={role.id}
             value={values[index] ?? null}
             participants={participants}
-            excluded={[
-              ...assigned.filter((name) => name !== values[index]),
-              ...aguitarBlocked,
-            ]}
+            // Everyone holding another slot that date is blocked, unless that
+            // slot combines with this one (singing plus an instrument that
+            // allows it).
+            excluded={slots
+              .filter(
+                (slot) => !(slot.role.id === role.id && slot.index === index)
+              )
+              .filter((slot) => !rolesCombinable(slot.role, role))
+              .map((slot) => slot.name)}
             onSelect={(name) => {
               const updatedValues = [...values];
               if (name === null) updatedValues.splice(index, 1);
               else updatedValues[index] = name;
-              const cleaned = updatedValues.filter(Boolean);
-              const updated =
-                role === "vocal"
-                  ? { ...assignment, vocals: cleaned }
-                  : { ...assignment, egit: cleaned };
+              const updated: DateAssignment = {
+                ...assignment,
+                slots: {
+                  ...assignment.slots,
+                  [role.id]: updatedValues.filter(Boolean),
+                },
+              };
+              // The MD keeps the role as long as they still hold another
+              // MD-eligible slot (e.g. they only stopped singing).
               if (
                 assignment.md !== null &&
                 values[index] === assignment.md &&
-                name !== assignment.md
+                name !== assignment.md &&
+                !holdsMdSlot(updated, assignment.md)
               )
                 updated.md = null;
               onChange(updated);
@@ -798,61 +801,55 @@ function PlanRow({
           })}
         </span>
       </td>
-      <td className="px-3 py-2">{singleSelect("leader")}</td>
-      <td className="px-3 py-2">{multiSelect("vocal", assignment.vocals)}</td>
-      <td className="px-3 py-2">{singleSelect("bass")}</td>
-      <td className="px-3 py-2">{multiSelect("egit", assignment.egit)}</td>
-      <td className="px-3 py-2">
-        <PersonSelect
-          date={date}
-          role="aguitar"
-          value={aguitarName}
-          participants={participants}
-          excluded={instrumentNames}
-          onSelect={(name) => onChange({ ...assignment, aguitar: name })}
-        />
-      </td>
-      <td className="px-3 py-2">{singleSelect("drums")}</td>
-      <td className="px-3 py-2">{singleSelect("keys")}</td>
-      <td className="px-3 py-2">
-        <StatusSelect
-          value={assignment.md ?? ""}
-          status={null}
-          accentDotClass="bg-indigo-500"
-          onChange={(selected) => {
-            if (selected === CUSTOM_NAME_OPTION) {
-              const entered = window.prompt("Name eingeben:")?.trim();
-              if (entered) onChange({ ...assignment, md: entered });
-              return;
-            }
-            onChange({ ...assignment, md: selected || null });
-          }}
-        >
-          <option value="">offen</option>
-          {assignment.md !== null &&
-            !mdCandidates.some(
-              (candidate) => candidate.name === assignment.md
-            ) && <option value={assignment.md}>{assignment.md} (Gast)</option>}
-          {mdCandidates.map((candidate) => (
-            <option key={candidate.name} value={candidate.name}>
-              {candidate.name}
-            </option>
-          ))}
-          <option value={CUSTOM_NAME_OPTION}>✎ Anderer Name…</option>
-        </StatusSelect>
-      </td>
+      {config.roles.map((role) => (
+        <td key={role.id} className="px-3 py-2">
+          {roleSelects(role)}
+        </td>
+      ))}
+      {showMd && (
+        <td className="px-3 py-2">
+          <StatusSelect
+            value={assignment.md ?? ""}
+            status={null}
+            accentDotClass="bg-indigo-500"
+            onChange={(selected) => {
+              if (selected === CUSTOM_NAME_OPTION) {
+                const entered = window.prompt("Name eingeben:")?.trim();
+                if (entered) onChange({ ...assignment, md: entered });
+                return;
+              }
+              onChange({ ...assignment, md: selected || null });
+            }}
+          >
+            <option value="">offen</option>
+            {assignment.md !== null &&
+              !mdCandidates.some(
+                (candidate) => candidate.name === assignment.md
+              ) && (
+                <option value={assignment.md}>{assignment.md} (Gast)</option>
+              )}
+            {mdCandidates.map((candidate) => (
+              <option key={candidate.name} value={candidate.name}>
+                {candidate.name}
+              </option>
+            ))}
+            <option value={CUSTOM_NAME_OPTION}>✎ Anderer Name…</option>
+          </StatusSelect>
+        </td>
+      )}
     </tr>
   );
 }
 
-// Every column of the statistics table can be sorted by.
-type StatsColumn = "name" | "dateCount" | "mdCount" | Role;
+// Every column of the statistics table can be sorted by. Role columns are
+// prefixed so a configured role id can never collide with the fixed ones.
+type StatsColumn = "name" | "dateCount" | "mdCount" | `role:${RoleId}`;
 
 function statsValue(person: PersonPlanStats, column: StatsColumn): number {
   if (column === "dateCount") return person.dateCount;
   if (column === "mdCount") return person.mdCount;
   if (column === "name") return 0;
-  return person.roleCounts[column];
+  return person.roleCounts[column.slice("role:".length)] ?? 0;
 }
 
 function StatsHeaderCell({
@@ -901,10 +898,12 @@ function StatsHeaderCell({
 // reflected immediately.
 function PlanStatistics({
   dates,
+  config,
   plan,
   participants,
 }: {
   dates: string[];
+  config: LineupConfig;
   plan: Plan;
   participants: AdminParticipant[];
 }) {
@@ -916,9 +915,25 @@ function PlanStatistics({
   const stats = collectPlanStats(
     plan,
     dates,
-    participants.map((participant) => participant.name)
+    participants.map((participant) => participant.name),
+    config
   );
   if (stats.length === 0) return null;
+
+  const showMd = mdEnabled(config);
+  // Slots that come on top of another one on the same date and therefore add
+  // no celebration of their own.
+  const extraSlotLabels = [
+    ...(showMd ? ["MD"] : []),
+    ...(config.roles.some((role) => role.combinableWithSinging)
+      ? [
+          `${config.roles
+            .filter((role) => role.combinableWithSinging)
+            .map((role) => role.label)
+            .join(" oder ")} in Kombination mit einer Gesangsrolle`,
+        ]
+      : []),
+  ];
 
   const dateCounts = stats.map((person) => person.dateCount);
   const maxDateCount = Math.max(...dateCounts);
@@ -971,23 +986,25 @@ function PlanStatistics({
                 sort={sort}
                 onSort={toggleSort}
               />
-              {ALL_ROLES.map((role) => (
+              {config.roles.map((role) => (
                 <StatsHeaderCell
-                  key={role}
-                  column={role}
-                  label={ROLE_LABELS[role]}
+                  key={role.id}
+                  column={`role:${role.id}`}
+                  label={role.label}
                   align="center"
                   sort={sort}
                   onSort={toggleSort}
                 />
               ))}
-              <StatsHeaderCell
-                column="mdCount"
-                label="MD"
-                align="center"
-                sort={sort}
-                onSort={toggleSort}
-              />
+              {showMd && (
+                <StatsHeaderCell
+                  column="mdCount"
+                  label="MD"
+                  align="center"
+                  sort={sort}
+                  onSort={toggleSort}
+                />
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -1030,19 +1047,25 @@ function PlanStatistics({
                     </span>
                   </div>
                 </td>
-                {ALL_ROLES.map((role) => (
-                  <StatCountCell key={role} count={person.roleCounts[role]} />
+                {config.roles.map((role) => (
+                  <StatCountCell
+                    key={role.id}
+                    count={person.roleCounts[role.id] ?? 0}
+                  />
                 ))}
-                <StatCountCell count={person.mdCount} />
+                {showMd && <StatCountCell count={person.mdCount} />}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">
-        «Einsätze» zählt Termine, nicht Slots: MD und A-Gitarre in Kombination
-        mit einer Gesangsrolle ergeben keinen zusätzlichen Einsatz.
-      </p>
+      {extraSlotLabels.length > 0 && (
+        <p className="text-xs text-slate-500">
+          «Einsätze» zählt Termine, nicht Slots: {extraSlotLabels.join(" und ")}{" "}
+          {extraSlotLabels.length === 1 ? "ergibt" : "ergeben"} keinen
+          zusätzlichen Einsatz.
+        </p>
+      )}
     </section>
   );
 }
@@ -1136,7 +1159,7 @@ function PersonSelect({
   onSelect,
 }: {
   date: string;
-  role: Role;
+  role: RoleId;
   value: string | null;
   participants: AdminParticipant[];
   excluded: string[];
@@ -1265,6 +1288,7 @@ function AvailabilityMatrix({
   doodleId,
   status,
   dates,
+  config,
   participants,
   busy,
   onDelete,
@@ -1273,6 +1297,7 @@ function AvailabilityMatrix({
   doodleId: string;
   status: "open" | "closed";
   dates: string[];
+  config: LineupConfig;
   participants: AdminParticipant[];
   busy: boolean;
   onDelete: (participantName: string) => void;
@@ -1287,8 +1312,8 @@ function AvailabilityMatrix({
     setExporting(true);
     try {
       if (format === "excel")
-        await downloadAvailabilityExcel(title, dates, participants);
-      else downloadAvailabilityCsv(title, dates, participants);
+        await downloadAvailabilityExcel(title, dates, participants, config);
+      else downloadAvailabilityCsv(title, dates, participants, config);
     } finally {
       setExporting(false);
     }
@@ -1337,7 +1362,7 @@ function AvailabilityMatrix({
                 </td>
                 <td className="px-3 py-2 text-slate-500">
                   {participant.roles
-                    .map((role) => ROLE_LABELS[role])
+                    .map((role) => roleLabel(config, role))
                     .join(", ")}
                 </td>
                 {dates.map((date) => {

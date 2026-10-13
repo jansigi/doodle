@@ -1,39 +1,210 @@
-import type { Role } from "./types";
+import type { LineupConfig, RoleConfig, RoleId } from "./types";
 
-export const ROLE_LABELS: Record<Role, string> = {
-  leader: "Worship Leader",
-  vocal: "Vocals",
-  bass: "Bass",
-  egit: "E-Gitarre",
-  aguitar: "A-Gitarre",
-  drums: "Drums",
-  keys: "Keys",
+// The lineup every doodle used before it became configurable: 1 worship
+// leader plus 4 additional vocals and one band. The ids double as the keys of
+// the legacy plan format, so they must never change.
+export const DEFAULT_LINEUP: LineupConfig = {
+  roles: [
+    {
+      id: "leader",
+      label: "Worship Leader",
+      singing: true,
+      min: 1,
+      max: 1,
+      canMd: false,
+      combinableWithSinging: false,
+    },
+    {
+      id: "vocal",
+      label: "Vocals",
+      singing: true,
+      min: 4,
+      max: 4,
+      canMd: false,
+      combinableWithSinging: false,
+    },
+    {
+      id: "bass",
+      label: "Bass",
+      singing: false,
+      min: 1,
+      max: 1,
+      canMd: true,
+      combinableWithSinging: false,
+    },
+    {
+      id: "egit",
+      label: "E-Gitarre",
+      singing: false,
+      min: 1,
+      max: 2,
+      canMd: true,
+      combinableWithSinging: false,
+    },
+    {
+      // Optional, may double with a singing role, not MD-eligible.
+      id: "aguitar",
+      label: "A-Gitarre",
+      singing: false,
+      min: 0,
+      max: 1,
+      canMd: false,
+      combinableWithSinging: true,
+    },
+    {
+      id: "drums",
+      label: "Drums",
+      singing: false,
+      min: 1,
+      max: 1,
+      canMd: true,
+      combinableWithSinging: false,
+    },
+    {
+      id: "keys",
+      label: "Keys",
+      singing: false,
+      min: 1,
+      max: 1,
+      canMd: true,
+      combinableWithSinging: false,
+    },
+  ],
 };
 
-// Only these instrumentalists can take the MD (Musical Director) role
-// (A-Guitar does not qualify).
-export const INSTRUMENT_ROLES: Role[] = ["bass", "egit", "drums", "keys"];
+export const MAX_ROLES = 20;
+export const MAX_PEOPLE_PER_ROLE = 20;
+export const MAX_ROLE_LABEL_LENGTH = 40;
 
-export const ALL_ROLES: Role[] = [
-  "leader",
-  "vocal",
-  "bass",
-  "egit",
-  "aguitar",
-  "drums",
-  "keys",
-];
+const ROLE_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 
-// Target lineup per celebration: 1 worship leader plus 4 additional vocals.
-export const LINEUP_TARGETS: Record<Role, { min: number; max: number }> = {
-  leader: { min: 1, max: 1 },
-  vocal: { min: 4, max: 4 },
-  bass: { min: 1, max: 1 },
-  egit: { min: 1, max: 2 },
-  aguitar: { min: 0, max: 1 }, // optional, may double with a singing role
-  drums: { min: 1, max: 1 },
-  keys: { min: 1, max: 1 },
-};
+export function findRole(
+  config: LineupConfig,
+  roleId: RoleId
+): RoleConfig | undefined {
+  return config.roles.find((role) => role.id === roleId);
+}
+
+export function roleLabel(config: LineupConfig, roleId: RoleId): string {
+  return findRole(config, roleId)?.label ?? roleId;
+}
+
+// Whether one person may hold both slots on the same date: exactly one
+// singing role plus one instrument that can be played while singing.
+export function rolesCombinable(a: RoleConfig, b: RoleConfig): boolean {
+  if (a.id === b.id || a.singing === b.singing) return false;
+  const instrument = a.singing ? b : a;
+  return instrument.combinableWithSinging;
+}
+
+// Without a single MD-eligible role there is no MD to plan (and no hint
+// about a missing one).
+export function mdEnabled(config: LineupConfig): boolean {
+  return config.roles.some((role) => role.canMd);
+}
+
+export function formatRoleCount(role: RoleConfig): string {
+  return role.min === role.max ? `${role.min}` : `${role.min}-${role.max}`;
+}
+
+export function lineupsEqual(a: LineupConfig, b: LineupConfig): boolean {
+  return (
+    a.roles.length === b.roles.length &&
+    a.roles.every((role, index) => {
+      const other = b.roles[index];
+      return (
+        role.id === other.id &&
+        role.label === other.label &&
+        role.singing === other.singing &&
+        role.min === other.min &&
+        role.max === other.max &&
+        role.canMd === other.canMd &&
+        role.combinableWithSinging === other.combinableWithSinging
+      );
+    })
+  );
+}
+
+// Validates a lineup coming from the client and returns it in canonical form
+// (trimmed labels, singing roles first). Shared by the editor, which shows
+// the error inline, and the API, which rejects the request with it.
+export function parseLineupConfig(
+  raw: unknown
+): { config: LineupConfig } | { error: string } {
+  const rawRoles = (raw as { roles?: unknown } | null)?.roles;
+  if (!Array.isArray(rawRoles) || rawRoles.length === 0)
+    return { error: "Mindestens eine Rolle angeben" };
+  if (rawRoles.length > MAX_ROLES)
+    return { error: `Höchstens ${MAX_ROLES} Rollen möglich` };
+
+  const roles: RoleConfig[] = [];
+  for (const rawRole of rawRoles as Array<Record<string, unknown>>) {
+    const id = typeof rawRole?.id === "string" ? rawRole.id : "";
+    const label =
+      typeof rawRole?.label === "string" ? rawRole.label.trim() : "";
+    const { min, max } = rawRole ?? {};
+    if (!ROLE_ID_PATTERN.test(id) || roles.some((role) => role.id === id))
+      return { error: "Ungültige Rollen-Konfiguration" };
+    if (!label) return { error: "Jede Rolle braucht einen Namen" };
+    if (label.length > MAX_ROLE_LABEL_LENGTH)
+      return {
+        error: `Rollennamen dürfen höchstens ${MAX_ROLE_LABEL_LENGTH} Zeichen haben`,
+      };
+    if (
+      roles.some(
+        (role) => role.label.toLowerCase() === label.toLowerCase()
+      )
+    )
+      return { error: `Die Rolle «${label}» gibt es zweimal` };
+    if (
+      !Number.isInteger(min) ||
+      (min as number) < 0 ||
+      (min as number) > MAX_PEOPLE_PER_ROLE
+    )
+      return {
+        error: `${label}: Mindestanzahl muss zwischen 0 und ${MAX_PEOPLE_PER_ROLE} liegen`,
+      };
+    if (
+      !Number.isInteger(max) ||
+      (max as number) < 1 ||
+      (max as number) > MAX_PEOPLE_PER_ROLE
+    )
+      return {
+        error: `${label}: Höchstanzahl muss zwischen 1 und ${MAX_PEOPLE_PER_ROLE} liegen`,
+      };
+    if ((min as number) > (max as number))
+      return {
+        error: `${label}: Mindestanzahl ist grösser als die Höchstanzahl`,
+      };
+    const singing = Boolean(rawRole.singing);
+    roles.push({
+      id,
+      label,
+      singing,
+      min: min as number,
+      max: max as number,
+      canMd: Boolean(rawRole.canMd),
+      combinableWithSinging: !singing && Boolean(rawRole.combinableWithSinging),
+    });
+  }
+
+  return {
+    config: {
+      roles: [
+        ...roles.filter((role) => role.singing),
+        ...roles.filter((role) => !role.singing),
+      ],
+    },
+  };
+}
+
+// Doodles created before the lineup became configurable have no stored
+// config and keep planning with the default.
+export function storedLineup(raw: unknown): LineupConfig {
+  if (raw == null) return DEFAULT_LINEUP;
+  const parsed = parseLineupConfig(raw);
+  return "config" in parsed ? parsed.config : DEFAULT_LINEUP;
+}
 
 export function formatDateGerman(isoDate: string): string {
   const date = new Date(isoDate + "T00:00:00");

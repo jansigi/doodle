@@ -2,19 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import type { Availability, Role } from "@/lib/types";
-import {
-  ALL_ROLES,
-  INSTRUMENT_ROLES,
-  ROLE_LABELS,
-  formatDateGerman,
-} from "@/lib/roles";
+import type { Availability, LineupConfig, RoleId } from "@/lib/types";
+import { findRole, formatDateGerman } from "@/lib/roles";
 
 interface PublicDoodle {
   id: string;
   title: string;
   status: "open" | "closed";
   dates: string[];
+  config: LineupConfig;
 }
 
 const AVAILABILITY_OPTIONS: Array<{
@@ -37,7 +33,7 @@ export default function ParticipantPage() {
   const [entryLoaded, setEntryLoaded] = useState(false);
   const [checkingName, setCheckingName] = useState(false);
 
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [roles, setRoles] = useState<RoleId[]>([]);
   const [canMd, setCanMd] = useState(false);
   const [maxPerMonth, setMaxPerMonth] = useState<number | null>(null);
   const [availability, setAvailability] = useState<
@@ -109,20 +105,19 @@ export default function ParticipantPage() {
     setError(null);
   }
 
-  function toggleRole(role: Role) {
+  function hasMdRole(selectedRoles: RoleId[]): boolean {
+    return selectedRoles.some(
+      (role) => doodle !== null && findRole(doodle.config, role)?.canMd
+    );
+  }
+
+  function toggleRole(role: RoleId) {
     const updatedRoles = roles.includes(role)
       ? roles.filter((existing) => existing !== role)
       : [...roles, role];
     setRoles(updatedRoles);
-    if (
-      !updatedRoles.some((selected) => INSTRUMENT_ROLES.includes(selected))
-    )
-      setCanMd(false);
+    if (!hasMdRole(updatedRoles)) setCanMd(false);
   }
-
-  const playsInstrument = roles.some((selected) =>
-    INSTRUMENT_ROLES.includes(selected)
-  );
 
   function setAllAvailability(value: Availability) {
     if (!doodle) return;
@@ -259,22 +254,22 @@ export default function ParticipantPage() {
       <section className="space-y-2">
         <p className="font-medium">Deine Rollen (mehrere möglich)</p>
         <div className="flex flex-wrap gap-2">
-          {ALL_ROLES.map((role) => (
+          {doodle.config.roles.map((role) => (
             <button
-              key={role}
+              key={role.id}
               type="button"
-              onClick={() => toggleRole(role)}
+              onClick={() => toggleRole(role.id)}
               className={`rounded-full border px-4 py-1.5 text-sm transition ${
-                roles.includes(role)
+                roles.includes(role.id)
                   ? "border-indigo-600 bg-indigo-600 text-white"
                   : "border-slate-300 bg-white hover:border-indigo-400"
               }`}
             >
-              {ROLE_LABELS[role]}
+              {role.label}
             </button>
           ))}
         </div>
-        {playsInstrument && (
+        {hasMdRole(roles) && (
           <label className="mt-2 flex items-center gap-2 text-sm">
             <input
               type="checkbox"

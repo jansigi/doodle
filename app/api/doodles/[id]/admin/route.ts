@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { createServerSupabase } from "@/lib/supabase";
 import { collectPlanWarnings, generatePlan } from "@/lib/planner";
 import { normalizePlan, normalizeRoles } from "@/lib/migrate";
+import { storedLineup } from "@/lib/roles";
 import type { Participant, Plan } from "@/lib/types";
 
 type AdminAction =
@@ -37,6 +38,8 @@ export async function POST(
   if (!passwordValid)
     return NextResponse.json({ error: "Falsches Passwort" }, { status: 401 });
 
+  const config = storedLineup(doodle.config);
+
   if (action === "deleteParticipant") {
     const participantName: string = (body.participantName ?? "").trim();
     if (!participantName)
@@ -57,18 +60,22 @@ export async function POST(
     .order("name");
   const participants = (participantRows ?? []).map((row) => ({
     ...(row as Participant),
-    roles: normalizeRoles((row as Participant).roles as string[]),
+    roles: normalizeRoles((row as Participant).roles as string[], config),
   }));
 
   const updates: Record<string, unknown> = {};
 
   if (action === "regenerate") {
-    const { plan, warnings } = generatePlan(doodle.dates, participants);
+    const { plan, warnings } = generatePlan(
+      doodle.dates,
+      participants,
+      config
+    );
     updates.plan = plan;
     updates.warnings = warnings;
   } else if (action === "close") {
     updates.status = "closed";
-    const existingPlan = normalizePlan(doodle.plan as Plan | null);
+    const existingPlan = normalizePlan(doodle.plan, config);
     if (existingPlan) {
       // Closing never touches an existing plan - only regenerating does.
       // Availabilities may have changed while the doodle was open, so the
@@ -76,22 +83,27 @@ export async function POST(
       updates.warnings = collectPlanWarnings(
         doodle.dates,
         participants,
-        existingPlan
+        existingPlan,
+        config
       );
     } else {
-      const { plan, warnings } = generatePlan(doodle.dates, participants);
+      const { plan, warnings } = generatePlan(
+        doodle.dates,
+        participants,
+        config
+      );
       updates.plan = plan;
       updates.warnings = warnings;
     }
   } else if (action === "reopen") {
     updates.status = "open";
   } else if (action === "updatePlan") {
-    const updatedPlan = normalizePlan(body.plan as Plan);
+    const updatedPlan = normalizePlan(body.plan, config);
     updates.plan = updatedPlan;
     // Hints always describe the stored plan, so they are derived again after
     // every manual change instead of being carried over.
     updates.warnings = updatedPlan
-      ? collectPlanWarnings(doodle.dates, participants, updatedPlan)
+      ? collectPlanWarnings(doodle.dates, participants, updatedPlan, config)
       : [];
   }
 
@@ -110,7 +122,8 @@ export async function POST(
       title: doodle.title,
       status: (updates.status as string) ?? doodle.status,
       dates: doodle.dates,
-      plan: normalizePlan((updates.plan as Plan) ?? doodle.plan),
+      config,
+      plan: normalizePlan((updates.plan as Plan) ?? doodle.plan, config),
       warnings: (updates.warnings as string[]) ?? doodle.warnings,
     },
     participants: participants.map((participant) => ({

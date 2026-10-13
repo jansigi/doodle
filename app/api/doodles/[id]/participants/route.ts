@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase";
-import type { Availability, Role } from "@/lib/types";
+import type { Availability, RoleId } from "@/lib/types";
 import { normalizeRoles } from "@/lib/migrate";
-import { INSTRUMENT_ROLES } from "@/lib/roles";
+import { findRole, storedLineup } from "@/lib/roles";
 
 // Load an existing entry by name so a participant can edit their answer.
 export async function GET(
@@ -14,6 +14,11 @@ export async function GET(
     return NextResponse.json({ error: "Name fehlt" }, { status: 400 });
 
   const supabase = createServerSupabase();
+  const { data: doodle } = await supabase
+    .from("doodles")
+    .select("config")
+    .eq("id", params.id)
+    .single();
   const { data: participant } = await supabase
     .from("participants")
     .select("name, roles, can_md, max_per_month, availability")
@@ -25,7 +30,10 @@ export async function GET(
     participant: participant
       ? {
           ...participant,
-          roles: normalizeRoles(participant.roles as string[]),
+          roles: normalizeRoles(
+            participant.roles as string[],
+            storedLineup(doodle?.config)
+          ),
         }
       : null,
   });
@@ -75,13 +83,6 @@ export async function POST(
 ) {
   const body = await request.json();
   const name: string = (body.name ?? "").trim();
-  const roles: Role[] = normalizeRoles(
-    Array.isArray(body.roles) ? body.roles : []
-  );
-  // MD is only possible for instrumentalists (keys, bass, e-guitar, drums).
-  const canMd: boolean =
-    Boolean(body.canMd) &&
-    roles.some((role: Role) => INSTRUMENT_ROLES.includes(role));
   const maxPerMonth: number | null =
     Number.isInteger(body.maxPerMonth) &&
     body.maxPerMonth >= 1 &&
@@ -92,16 +93,11 @@ export async function POST(
 
   if (!name)
     return NextResponse.json({ error: "Name fehlt" }, { status: 400 });
-  if (roles.length === 0)
-    return NextResponse.json(
-      { error: "Mindestens eine Rolle wählen" },
-      { status: 400 }
-    );
 
   const supabase = createServerSupabase();
   const { data: doodle } = await supabase
     .from("doodles")
-    .select("status, dates")
+    .select("status, dates, config")
     .eq("id", params.id)
     .single();
   if (!doodle)
@@ -114,6 +110,21 @@ export async function POST(
       { error: "Dieses Doodle ist geschlossen" },
       { status: 409 }
     );
+
+  const config = storedLineup(doodle.config);
+  const roles: RoleId[] = normalizeRoles(
+    Array.isArray(body.roles) ? body.roles : [],
+    config
+  );
+  if (roles.length === 0)
+    return NextResponse.json(
+      { error: "Mindestens eine Rolle wählen" },
+      { status: 400 }
+    );
+  // MD is only possible for someone with an MD-eligible role.
+  const canMd: boolean =
+    Boolean(body.canMd) &&
+    roles.some((role) => findRole(config, role)?.canMd);
 
   const validDates = new Set<string>(doodle.dates);
   const cleanedAvailability = Object.fromEntries(

@@ -8,13 +8,16 @@ manuell angepasst und als PDF exportiert werden kann.
 ## Features
 
 - **Doodle erstellen:** Titel, Daten der Celebrations, Admin-Passwort
-- **Teilnehmer-Link:** Name, Rollen (Worship Leader, Vocal Coordinator,
-  Vocals, Bass, E-Gitarre, Drums, Keys, optional MD) und pro Datum
-  Ja / Vielleicht / Nein
-- **Automatischer Plan** beim Schliessen mit Ziel-Besetzung pro Celebration:
-  1 Worship Leader, 1 Vocal Coordinator, 2–3 weitere Vocals (Leader und
-  Coordinator zählen zu den 4–5 Vocals), 1 Bass, 1–2 E-Gitarre, 1 Drums,
-  1 Keys, 1 MD (Tag auf einer der eingeteilten Personen)
+- **Besetzung konfigurierbar:** Standard ist 1 Worship Leader, 4 Vocals,
+  1 Bass, 1-2 E-Gitarre, 0-1 A-Gitarre, 1 Drums, 1 Keys. Über «Bearbeiten»
+  lassen sich Rollen umbenennen, hinzufügen und entfernen, die Anzahl pro
+  Celebration (Mindest- und Höchstanzahl) festlegen, bestimmen, welche
+  Rollen MD sein können und welche Instrumente gleichzeitig mit einer
+  Gesangsrolle gespielt werden dürfen (z.B. A-Gitarre oder E-Gitarre)
+- **Teilnehmer-Link:** Name, Rollen aus der konfigurierten Besetzung,
+  optional MD und pro Datum Ja / Vielleicht / Nein
+- **Automatischer Plan** beim Schliessen nach der konfigurierten Besetzung,
+  inklusive MD (Tag auf einer der eingeteilten Personen)
 - **Fairness:** Alle spielen ähnlich oft, möglichst nicht zwei Wochen
   hintereinander; «Vielleicht» wird nur genutzt wenn nötig
 - **Warnungen,** wo die Ziel-Besetzung nicht erreicht werden kann
@@ -26,6 +29,8 @@ manuell angepasst und als PDF exportiert werden kann.
 1. **Supabase-Projekt erstellen** auf [supabase.com](https://supabase.com)
    (Free Tier reicht).
 2. Im Supabase **SQL Editor** den Inhalt von `supabase/schema.sql` ausführen.
+   Bei einer bestehenden Datenbank stattdessen die noch fehlenden Dateien aus
+   `supabase/migrations/` der Reihe nach ausführen.
 3. `.env.local.example` nach `.env.local` kopieren und die Werte aus
    *Project Settings → API* eintragen (`SUPABASE_URL` und
    `SUPABASE_SERVICE_ROLE_KEY`).

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { formatDateGerman } from "@/lib/roles";
+import type { LineupConfig } from "@/lib/types";
+import { DEFAULT_LINEUP, formatDateGerman } from "@/lib/roles";
+import { LineupEditorDialog, LineupSummary } from "./lineup-editor";
 
 // Index matches JavaScript's Date.getDay() (0 = Sonntag).
 const WEEKDAYS = [
@@ -28,6 +30,8 @@ export default function CreateDoodlePage() {
   const [weekday, setWeekday] = useState(0); // 0 = Sonntag (JS getDay)
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  const [config, setConfig] = useState<LineupConfig>(DEFAULT_LINEUP);
+  const [editingLineup, setEditingLineup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -61,7 +65,7 @@ export default function CreateDoodlePage() {
     const response = await fetch("/api/doodles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, dates, password }),
+      body: JSON.stringify({ title, dates, password, config }),
     });
     const result = await response.json();
     setSubmitting(false);
@@ -89,7 +93,10 @@ export default function CreateDoodlePage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
+    // Flex column instead of space-y: the fixed dialog below is out of flow,
+    // so it gets no gap - `space-y-*` would give it a top margin and shift the
+    // whole backdrop down.
+    <div className="mx-auto flex max-w-xl flex-col gap-6">
       <h1 className="text-2xl font-bold">Neues Worship-Doodle erstellen</h1>
 
       <div className="space-y-2">
@@ -213,6 +220,12 @@ export default function CreateDoodlePage() {
         </ul>
       </div>
 
+      <LineupSummary
+        config={config}
+        onEdit={() => setEditingLineup(true)}
+        onReset={() => setConfig(DEFAULT_LINEUP)}
+      />
+
       {error && <p className="text-red-600">{error}</p>}
 
       <button
@@ -223,6 +236,17 @@ export default function CreateDoodlePage() {
       >
         {submitting ? "Wird erstellt…" : "Doodle erstellen"}
       </button>
+
+      {editingLineup && (
+        <LineupEditorDialog
+          initial={config}
+          onCancel={() => setEditingLineup(false)}
+          onApply={(updated) => {
+            setConfig(updated);
+            setEditingLineup(false);
+          }}
+        />
+      )}
     </div>
   );
 }
