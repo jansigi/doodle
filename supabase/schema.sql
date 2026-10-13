@@ -6,6 +6,8 @@ create table doodles (
   password_hash text not null,
   status text not null default 'open' check (status in ('open', 'closed')),
   dates jsonb not null,
+  -- Lineup (roles, people per celebration). Null means the default lineup.
+  config jsonb,
   plan jsonb,
   warnings jsonb,
   created_at timestamptz not null default now()

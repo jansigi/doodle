@@ -1,45 +1,97 @@
-import type { DateAssignment, Plan, Role } from "./types";
-import { ALL_ROLES } from "./roles";
+import type { DateAssignment, LineupConfig, Plan, RoleId } from "./types";
 
-type LegacyDateAssignment = DateAssignment & { coordinator?: string | null };
+// Plan entries as they were stored before the lineup became configurable:
+// one fixed field per role.
+interface LegacyDateAssignment {
+  leader?: string | null;
+  vocals?: string[];
+  coordinator?: string | null;
+  bass?: string | null;
+  egit?: string[];
+  aguitar?: string | null;
+  drums?: string | null;
+  keys?: string | null;
+  md?: string | null;
+}
 
-export function normalizeRoles(roles: string[]): Role[] {
-  const normalized: Role[] = [];
+function cleanNames(names: unknown): string[] {
+  if (!Array.isArray(names)) return [];
+  return [
+    ...new Set(
+      names.filter(
+        (name): name is string => typeof name === "string" && name !== ""
+      )
+    ),
+  ];
+}
+
+function single(name: string | null | undefined): string[] {
+  return name ? [name] : [];
+}
+
+// The legacy fields map onto the ids of the default lineup.
+function legacySlots(legacy: LegacyDateAssignment): Record<RoleId, string[]> {
+  const vocals = [...(legacy.vocals ?? [])];
+  if (legacy.coordinator && !vocals.includes(legacy.coordinator))
+    vocals.push(legacy.coordinator);
+  return {
+    leader: single(legacy.leader),
+    vocal: vocals,
+    bass: single(legacy.bass),
+    egit: legacy.egit ?? [],
+    aguitar: single(legacy.aguitar),
+    drums: single(legacy.drums),
+    keys: single(legacy.keys),
+  };
+}
+
+export function normalizeRoles(
+  roles: string[],
+  config: LineupConfig
+): RoleId[] {
+  const known = new Set(config.roles.map((role) => role.id));
+  const normalized: RoleId[] = [];
   for (const role of roles) {
-    if (role === "coordinator") {
-      if (!normalized.includes("vocal")) normalized.push("vocal");
-    } else if (ALL_ROLES.includes(role as Role)) {
-      if (!normalized.includes(role as Role)) normalized.push(role as Role);
-    }
+    // The former Vocal Coordinator role was merged into Vocals.
+    const mapped = role === "coordinator" ? "vocal" : role;
+    if (known.has(mapped) && !normalized.includes(mapped))
+      normalized.push(mapped);
   }
   return normalized;
 }
 
+// Brings a stored or submitted assignment into the current shape: exactly
+// one slot list per configured role, nothing else.
 export function normalizeAssignment(
-  assignment: LegacyDateAssignment
+  raw: unknown,
+  config: LineupConfig
 ): DateAssignment {
-  const vocals = [...assignment.vocals];
-  if (assignment.coordinator && !vocals.includes(assignment.coordinator)) {
-    vocals.push(assignment.coordinator);
-  }
+  const assignment = (raw ?? {}) as {
+    slots?: Record<string, unknown>;
+  } & LegacyDateAssignment;
+  const slots: Record<RoleId, unknown> =
+    assignment.slots && typeof assignment.slots === "object"
+      ? assignment.slots
+      : legacySlots(assignment);
   return {
-    leader: assignment.leader,
-    vocals,
-    bass: assignment.bass,
-    egit: assignment.egit,
-    aguitar: assignment.aguitar,
-    drums: assignment.drums,
-    keys: assignment.keys,
-    md: assignment.md,
+    slots: Object.fromEntries(
+      config.roles.map((role) => [role.id, cleanNames(slots[role.id])])
+    ),
+    md:
+      typeof assignment.md === "string" && assignment.md !== ""
+        ? assignment.md
+        : null,
   };
 }
 
-export function normalizePlan(plan: Plan | null): Plan | null {
-  if (!plan) return null;
+export function normalizePlan(
+  plan: unknown,
+  config: LineupConfig
+): Plan | null {
+  if (!plan || typeof plan !== "object") return null;
   return Object.fromEntries(
-    Object.entries(plan).map(([date, assignment]) => [
-      date,
-      normalizeAssignment(assignment as LegacyDateAssignment),
-    ])
+    Object.entries(plan as Record<string, unknown>).map(
+      ([date, assignment]) => [date, normalizeAssignment(assignment, config)]
+    )
   );
 }

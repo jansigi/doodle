@@ -2,6 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-slate-50 font-sans text-slate-900 antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  ::selection {
+    @apply bg-indigo-100 text-indigo-950;
+  }
+}
+
+/* The small shared vocabulary every screen is built from. Contrast is
+   checked against WCAG AA: filled buttons darken on hover instead of
+   lightening, so white text never drops below 4.5:1. */
+@layer components {
+  .btn {
+    @apply inline-flex h-9 shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3.5 text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out-quart focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:translate-y-px disabled:pointer-events-none disabled:opacity-50;
+  }
+  /* :where keeps this a default: a size class on the icon still wins. */
+  .btn :where(svg) {
+    @apply h-4 w-4 shrink-0;
+  }
+  .btn-lg {
+    @apply h-11 px-5 text-[15px];
+  }
+  .btn-sm {
+    @apply h-8 px-2.5 text-[13px];
+  }
+  .btn-icon {
+    @apply h-8 w-8 px-0;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(30_27_75/0.24)] hover:bg-indigo-700;
+  }
+  .btn-secondary {
+    @apply border border-slate-200 bg-white text-slate-800 shadow-xs hover:border-slate-300 hover:bg-slate-50;
+  }
+  .btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+  .btn-danger {
+    @apply text-red-700 hover:bg-red-50 hover:text-red-800;
+  }
+  .btn-destructive {
+    @apply bg-red-600 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(69_10_10/0.24)] hover:bg-red-700;
+  }
+  .btn-warning {
+    @apply border border-amber-200 bg-amber-50 text-amber-900 shadow-xs hover:border-amber-300 hover:bg-amber-100;
+  }
+  .btn-caution {
+    @apply bg-amber-700 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(69_26_3/0.24)] hover:bg-amber-800;
+  }
+  .btn-success {
+    @apply bg-green-700 text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(5_46_22/0.24)] hover:bg-green-800;
+  }
+
+  .field-label {
+    @apply block text-sm font-medium text-slate-900;
+  }
+
+  /* 16px text on phones: iOS zooms into any smaller input on focus. */
+  .input {
+    @apply block h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-base text-slate-900 shadow-xs transition-[border-color,box-shadow] duration-150 ease-out-quart placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-[3px] focus:ring-indigo-500/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 sm:h-9 sm:text-sm;
+  }
+  .input-compact {
+    @apply h-9 text-sm;
+  }
+  .select {
+    @apply input cursor-pointer appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.625rem center;
+    background-size: 1rem;
+  }
+  .checkbox {
+    @apply h-4 w-4 cursor-pointer rounded border-slate-300 accent-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:ring-offset-2;
+  }
+
+  .card {
+    @apply rounded-lg border border-slate-200 bg-white shadow-card;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset;
+  }
+  .badge-neutral {
+    @apply bg-slate-50 text-slate-600 ring-slate-500/15;
+  }
+  .badge-indigo {
+    @apply bg-indigo-50 text-indigo-700 ring-indigo-600/15;
+  }
+  .badge-green {
+    @apply bg-green-50 text-green-700 ring-green-600/20;
+  }
+  .badge-amber {
+    @apply bg-amber-50 text-amber-800 ring-amber-600/20;
+  }
+
+  .link {
+    @apply rounded-sm font-medium text-indigo-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60;
+  }
+
+  .skeleton {
+    @apply rounded-md bg-slate-200/70 motion-safe:animate-pulse;
+  }
+}
+
+/* Every animation and transition collapses to an instant change. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

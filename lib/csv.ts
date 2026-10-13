@@ -1,5 +1,5 @@
-import type { Availability, Role } from "./types";
-import { ROLE_LABELS, formatDateGerman } from "./roles";
+import type { Availability, LineupConfig, RoleId } from "./types";
+import { formatDateGerman, roleLabel } from "./roles";
 
 const AVAILABILITY_LABELS: Record<Availability, string> = {
   yes: "Ja",
@@ -9,7 +9,7 @@ const AVAILABILITY_LABELS: Record<Availability, string> = {
 
 interface AvailabilityParticipant {
   name: string;
-  roles: Role[];
+  roles: RoleId[];
   can_md: boolean;
   max_per_month: number | null;
   availability: Record<string, Availability>;
@@ -29,7 +29,8 @@ function buildCsvRow(cells: string[]): string {
 export function downloadAvailabilityCsv(
   title: string,
   dates: string[],
-  participants: AvailabilityParticipant[]
+  participants: AvailabilityParticipant[],
+  config: LineupConfig
 ): void {
   const headers = [
     "Name",
@@ -41,7 +42,7 @@ export function downloadAvailabilityCsv(
 
   const rows = participants.map((participant) => [
     participant.name,
-    participant.roles.map((role) => ROLE_LABELS[role]).join(", "),
+    participant.roles.map((role) => roleLabel(config, role)).join(", "),
     participant.can_md ? "Ja" : "Nein",
     participant.max_per_month?.toString() ?? "",
     ...dates.map((date) => {

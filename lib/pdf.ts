@@ -1,12 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { Plan } from "./types";
+import type { LineupConfig, Plan } from "./types";
 import { formatDateGerman } from "./roles";
-
-function withMdTag(name: string | null, mdName: string | null): string {
-  if (!name) return "—";
-  return name === mdName ? `${name} (MD)` : name;
-}
 
 function listWithMdTag(names: string[], mdName: string | null): string {
   if (names.length === 0) return "—";
@@ -15,7 +10,11 @@ function listWithMdTag(names: string[], mdName: string | null): string {
     .join(", ");
 }
 
-export function downloadPlanPdf(title: string, plan: Plan): void {
+export function downloadPlanPdf(
+  title: string,
+  plan: Plan,
+  config: LineupConfig
+): void {
   const pdf = new jsPDF({ orientation: "landscape" });
 
   const sortedDates = Object.keys(plan).sort();
@@ -23,13 +22,9 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
     const assignment = plan[date];
     return [
       formatDateGerman(date),
-      withMdTag(assignment.leader, assignment.md),
-      listWithMdTag(assignment.vocals, assignment.md),
-      withMdTag(assignment.bass, assignment.md),
-      listWithMdTag(assignment.egit, assignment.md),
-      withMdTag(assignment.aguitar ?? null, assignment.md),
-      withMdTag(assignment.drums, assignment.md),
-      withMdTag(assignment.keys, assignment.md),
+      ...config.roles.map((role) =>
+        listWithMdTag(assignment.slots[role.id] ?? [], assignment.md)
+      ),
     ];
   });
 
@@ -38,18 +33,7 @@ export function downloadPlanPdf(title: string, plan: Plan): void {
     margin: { top: 24, left: 14, right: 14, bottom: 16 },
     // Keep each celebration on one page - never split a row across pages.
     rowPageBreak: "avoid",
-    head: [
-      [
-        "Datum",
-        "Worship Leader",
-        "Vocals",
-        "Bass",
-        "E-Gitarre",
-        "A-Gitarre",
-        "Drums",
-        "Keys",
-      ],
-    ],
+    head: [["Datum", ...config.roles.map((role) => role.label)]],
     body: rows,
     styles: { fontSize: 9, cellPadding: 2.5, valign: "middle" },
     headStyles: { fillColor: [67, 56, 202] },

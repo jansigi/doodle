@@ -1,21 +1,39 @@
-export type Role =
-  | "leader"
-  | "vocal"
-  | "bass"
-  | "egit"
-  | "aguitar"
-  | "drums"
-  | "keys";
+// Roles are configured per doodle, so a role is identified by the id from
+// its lineup config (e.g. "bass" or a generated id for a custom instrument).
+export type RoleId = string;
 
 export type Availability = "yes" | "maybe" | "no";
 
 export type DoodleStatus = "open" | "closed";
+
+export interface RoleConfig {
+  id: RoleId;
+  label: string;
+  // Singing roles (Worship Leader, Vocals) vs. instruments. Only instruments
+  // raise a hint when they stay below their minimum.
+  singing: boolean;
+  // People per celebration. The minimum is always filled where possible,
+  // slots above it only with people who answered "yes".
+  min: number;
+  max: number;
+  // Whoever holds this slot may take the MD role.
+  canMd: boolean;
+}
+
+export interface LineupConfig {
+  // Order is the column order in the plan, singing roles first.
+  roles: RoleConfig[];
+  // Pairs of roles one person may hold on the same date, e.g. worship leader
+  // and acoustic guitar. Without a pair, everyone plays exactly one role.
+  combinations: Array<[RoleId, RoleId]>;
+}
 
 export interface Doodle {
   id: string;
   title: string;
   status: DoodleStatus;
   dates: string[]; // ISO dates, sorted
+  config: LineupConfig;
   plan: Plan | null;
   warnings: string[] | null;
 }
@@ -24,7 +42,7 @@ export interface Participant {
   id: string;
   doodle_id: string;
   name: string;
-  roles: Role[];
+  roles: RoleId[];
   can_md: boolean;
   // Wish: at most this many assignments per calendar month (null = no limit).
   max_per_month: number | null;
@@ -32,29 +50,18 @@ export interface Participant {
 }
 
 export interface DateAssignment {
-  leader: string | null;
-  vocals: string[];
-  bass: string | null;
-  egit: string[];
-  // A-Guitar is the only instrument that can be combined with a singing role:
-  // the assigned person may simultaneously be leader/vocal.
-  aguitar: string | null;
-  drums: string | null;
-  keys: string | null;
+  // role id -> assigned names in slot order. A person may appear in several
+  // slots of the same date only if every pair of them is a configured
+  // combination.
+  slots: Record<RoleId, string[]>;
   md: string | null; // name of the musical director (one of the assigned people)
 }
 
 export type Plan = Record<string, DateAssignment>; // date -> assignment
 
-export function emptyDateAssignment(): DateAssignment {
+export function emptyDateAssignment(config: LineupConfig): DateAssignment {
   return {
-    leader: null,
-    vocals: [],
-    bass: null,
-    egit: [],
-    aguitar: null,
-    drums: null,
-    keys: null,
+    slots: Object.fromEntries(config.roles.map((role) => [role.id, []])),
     md: null,
   };
 }

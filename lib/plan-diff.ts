@@ -1,6 +1,5 @@
-import type { DateAssignment, Plan } from "./types";
+import type { DateAssignment, LineupConfig, Plan } from "./types";
 import { emptyDateAssignment } from "./types";
-import { ROLE_LABELS } from "./roles";
 
 export interface PlanChange {
   date: string;
@@ -32,6 +31,7 @@ function singleSlotChanges(
 
 // Reordering a list is not a change. A swap within the same slot (one person
 // out, another in) is reported as a single "A → B" instead of two entries.
+// Works for single-person roles as well: [A] → [B] is exactly that swap.
 function listSlotChanges(
   date: string,
   slot: string,
@@ -63,21 +63,18 @@ function listSlotChanges(
 function assignmentChanges(
   date: string,
   before: DateAssignment,
-  after: DateAssignment
+  after: DateAssignment,
+  config: LineupConfig
 ): PlanChange[] {
   return [
-    ...singleSlotChanges(date, ROLE_LABELS.leader, before.leader, after.leader),
-    ...listSlotChanges(date, ROLE_LABELS.vocal, before.vocals, after.vocals),
-    ...singleSlotChanges(date, ROLE_LABELS.bass, before.bass, after.bass),
-    ...listSlotChanges(date, ROLE_LABELS.egit, before.egit, after.egit),
-    ...singleSlotChanges(
-      date,
-      ROLE_LABELS.aguitar,
-      before.aguitar,
-      after.aguitar
+    ...config.roles.flatMap((role) =>
+      listSlotChanges(
+        date,
+        role.label,
+        before.slots[role.id] ?? [],
+        after.slots[role.id] ?? []
+      )
     ),
-    ...singleSlotChanges(date, ROLE_LABELS.drums, before.drums, after.drums),
-    ...singleSlotChanges(date, ROLE_LABELS.keys, before.keys, after.keys),
     ...singleSlotChanges(date, "MD", before.md, after.md),
   ];
 }
@@ -86,7 +83,8 @@ function assignmentChanges(
 export function collectPlanChanges(
   dates: string[],
   before: Plan | null,
-  after: Plan | null
+  after: Plan | null,
+  config: LineupConfig
 ): PlanChange[] {
   if (!after) return [];
   return [...dates]
@@ -94,8 +92,9 @@ export function collectPlanChanges(
     .flatMap((date) =>
       assignmentChanges(
         date,
-        before?.[date] ?? emptyDateAssignment(),
-        after[date] ?? emptyDateAssignment()
+        before?.[date] ?? emptyDateAssignment(config),
+        after[date] ?? emptyDateAssignment(config),
+        config
       )
     );
 }

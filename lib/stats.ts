@@ -1,22 +1,18 @@
-import type { Plan, Role } from "./types";
-import { ALL_ROLES } from "./roles";
+import type { LineupConfig, Plan, RoleId } from "./types";
 
 export interface PersonPlanStats {
   name: string;
   // Someone who appears in the plan without a participant entry (guest).
   isGuest: boolean;
-  roleCounts: Record<Role, number>;
+  roleCounts: Record<RoleId, number>;
   mdCount: number;
-  // Celebrations this person is scheduled for. A-Guitar may double with a
-  // singing role, so this can be lower than the sum of all role counts.
+  // Celebrations this person is scheduled for. An instrument may double with
+  // a singing role, so this can be lower than the sum of all role counts.
   dateCount: number;
 }
 
-function emptyRoleCounts(): Record<Role, number> {
-  return Object.fromEntries(ALL_ROLES.map((role) => [role, 0])) as Record<
-    Role,
-    number
-  >;
+function emptyRoleCounts(config: LineupConfig): Record<RoleId, number> {
+  return Object.fromEntries(config.roles.map((role) => [role.id, 0]));
 }
 
 // Counts how often every person plays which instrument across the plan.
@@ -25,7 +21,8 @@ function emptyRoleCounts(): Record<Role, number> {
 export function collectPlanStats(
   plan: Plan,
   dates: string[],
-  participantNames: string[]
+  participantNames: string[],
+  config: LineupConfig
 ): PersonPlanStats[] {
   const knownNames = new Set(participantNames);
   const statsByName = new Map<string, PersonPlanStats>();
@@ -36,7 +33,7 @@ export function collectPlanStats(
     const created: PersonPlanStats = {
       name,
       isGuest: !knownNames.has(name),
-      roleCounts: emptyRoleCounts(),
+      roleCounts: emptyRoleCounts(config),
       mdCount: 0,
       dateCount: 0,
     };
@@ -50,22 +47,11 @@ export function collectPlanStats(
     const assignment = plan[date];
     if (!assignment) return;
     const namesOnThisDate = new Set<string>();
-    const slots: Array<[Role, Array<string | null>]> = [
-      ["leader", [assignment.leader]],
-      ["vocal", assignment.vocals],
-      ["bass", [assignment.bass]],
-      ["egit", assignment.egit],
-      ["aguitar", [assignment.aguitar]],
-      ["drums", [assignment.drums]],
-      ["keys", [assignment.keys]],
-    ];
-    slots.forEach(([role, names]) => {
-      names
-        .filter((name): name is string => Boolean(name))
-        .forEach((name) => {
-          statsFor(name).roleCounts[role] += 1;
-          namesOnThisDate.add(name);
-        });
+    config.roles.forEach((role) => {
+      (assignment.slots[role.id] ?? []).forEach((name) => {
+        statsFor(name).roleCounts[role.id] += 1;
+        namesOnThisDate.add(name);
+      });
     });
     if (assignment.md) {
       statsFor(assignment.md).mdCount += 1;
