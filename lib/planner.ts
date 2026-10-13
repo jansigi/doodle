@@ -34,7 +34,7 @@ interface PlannerResult {
 }
 
 // Every slot of a date with the role it stands for, in column order. Someone
-// combining an instrument with a singing role shows up twice.
+// holding a combination of roles shows up once per slot.
 function assignmentSlots(
   config: LineupConfig,
   assignment: DateAssignment
@@ -56,7 +56,8 @@ function scheduledNames(
 }
 
 // Whether `name` may take `role` on top of the slots they already hold on
-// this date. Also false for a second slot of the same role.
+// this date: every held role must be combinable with it. Also false for a
+// second slot of the same role.
 function canAlsoTake(
   config: LineupConfig,
   assignment: DateAssignment,
@@ -65,7 +66,7 @@ function canAlsoTake(
 ): boolean {
   return assignmentSlots(config, assignment)
     .filter(([, slotName]) => slotName === name)
-    .every(([heldRole]) => rolesCombinable(heldRole, role));
+    .every(([heldRole]) => rolesCombinable(config, heldRole, role));
 }
 
 function candidateCost(
@@ -243,7 +244,7 @@ export function collectPlanWarnings(
       // Guests are not participants and carry no wishes to check.
       const participant = participantsByName.get(name);
       if (!participant) return;
-      // An instrument combined with a singing role stays one assignment.
+      // A combination of roles on one date stays one assignment.
       if (namesOnThisDate.has(name)) return;
       namesOnThisDate.add(name);
       const counts = monthlyCounts.get(name) ?? new Map<string, number>();

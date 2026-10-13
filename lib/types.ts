@@ -18,14 +18,14 @@ export interface RoleConfig {
   max: number;
   // Whoever holds this slot may take the MD role.
   canMd: boolean;
-  // Instruments only: the same person may hold this slot and a singing role
-  // on the same date (e.g. a worship leader playing acoustic guitar).
-  combinableWithSinging: boolean;
 }
 
 export interface LineupConfig {
   // Order is the column order in the plan, singing roles first.
   roles: RoleConfig[];
+  // Pairs of roles one person may hold on the same date, e.g. worship leader
+  // and acoustic guitar. Without a pair, everyone plays exactly one role.
+  combinations: Array<[RoleId, RoleId]>;
 }
 
 export interface Doodle {
@@ -50,9 +50,9 @@ export interface Participant {
 }
 
 export interface DateAssignment {
-  // role id -> assigned names in slot order. A person may appear in two
-  // slots of the same date only if one is a singing role and the other an
-  // instrument that is combinable with singing.
+  // role id -> assigned names in slot order. A person may appear in several
+  // slots of the same date only if every pair of them is a configured
+  // combination.
   slots: Record<RoleId, string[]>;
   md: string | null; // name of the musical director (one of the assigned people)
 }

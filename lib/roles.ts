@@ -12,7 +12,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 1,
       max: 1,
       canMd: false,
-      combinableWithSinging: false,
     },
     {
       id: "vocal",
@@ -21,7 +20,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 4,
       max: 4,
       canMd: false,
-      combinableWithSinging: false,
     },
     {
       id: "bass",
@@ -30,7 +28,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 1,
       max: 1,
       canMd: true,
-      combinableWithSinging: false,
     },
     {
       id: "egit",
@@ -39,7 +36,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 1,
       max: 2,
       canMd: true,
-      combinableWithSinging: false,
     },
     {
       // Optional, may double with a singing role, not MD-eligible.
@@ -49,7 +45,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 0,
       max: 1,
       canMd: false,
-      combinableWithSinging: true,
     },
     {
       id: "drums",
@@ -58,7 +53,6 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 1,
       max: 1,
       canMd: true,
-      combinableWithSinging: false,
     },
     {
       id: "keys",
@@ -67,8 +61,11 @@ export const DEFAULT_LINEUP: LineupConfig = {
       min: 1,
       max: 1,
       canMd: true,
-      combinableWithSinging: false,
     },
+  ],
+  combinations: [
+    ["leader", "aguitar"],
+    ["vocal", "aguitar"],
   ],
 };
 
@@ -89,12 +86,17 @@ export function roleLabel(config: LineupConfig, roleId: RoleId): string {
   return findRole(config, roleId)?.label ?? roleId;
 }
 
-// Whether one person may hold both slots on the same date: exactly one
-// singing role plus one instrument that can be played while singing.
-export function rolesCombinable(a: RoleConfig, b: RoleConfig): boolean {
-  if (a.id === b.id || a.singing === b.singing) return false;
-  const instrument = a.singing ? b : a;
-  return instrument.combinableWithSinging;
+// Whether one person may hold both slots on the same date.
+export function rolesCombinable(
+  config: LineupConfig,
+  a: RoleConfig,
+  b: RoleConfig
+): boolean {
+  if (a.id === b.id) return false;
+  return config.combinations.some(
+    ([first, second]) =>
+      (first === a.id && second === b.id) || (first === b.id && second === a.id)
+  );
 }
 
 // Without a single MD-eligible role there is no MD to plan (and no hint
@@ -108,6 +110,9 @@ export function formatRoleCount(role: RoleConfig): string {
 }
 
 export function lineupsEqual(a: LineupConfig, b: LineupConfig): boolean {
+  const pairKey = ([first, second]: [RoleId, RoleId]) =>
+    [first, second].sort().join("|");
+  const pairsA = new Set(a.combinations.map(pairKey));
   return (
     a.roles.length === b.roles.length &&
     a.roles.every((role, index) => {
@@ -118,10 +123,11 @@ export function lineupsEqual(a: LineupConfig, b: LineupConfig): boolean {
         role.singing === other.singing &&
         role.min === other.min &&
         role.max === other.max &&
-        role.canMd === other.canMd &&
-        role.combinableWithSinging === other.combinableWithSinging
+        role.canMd === other.canMd
       );
-    })
+    }) &&
+    a.combinations.length === b.combinations.length &&
+    b.combinations.every((pair) => pairsA.has(pairKey(pair)))
   );
 }
 
@@ -176,26 +182,62 @@ export function parseLineupConfig(
       return {
         error: `${label}: Mindestanzahl ist grösser als die Höchstanzahl`,
       };
-    const singing = Boolean(rawRole.singing);
     roles.push({
       id,
       label,
-      singing,
+      singing: Boolean(rawRole.singing),
       min: min as number,
       max: max as number,
       canMd: Boolean(rawRole.canMd),
-      combinableWithSinging: !singing && Boolean(rawRole.combinableWithSinging),
     });
   }
+  const orderedRoles = [
+    ...roles.filter((role) => role.singing),
+    ...roles.filter((role) => !role.singing),
+  ];
+  const position = new Map(orderedRoles.map((role, index) => [role.id, index]));
 
-  return {
-    config: {
-      roles: [
-        ...roles.filter((role) => role.singing),
-        ...roles.filter((role) => !role.singing),
-      ],
-    },
-  };
+  // Lineups saved before pairs existed had a per-instrument flag that
+  // allowed every singing role.
+  const rawCombinations = (raw as { combinations?: unknown }).combinations;
+  const requested: unknown[] = Array.isArray(rawCombinations)
+    ? rawCombinations
+    : (rawRoles as Array<Record<string, unknown>>)
+        .filter((rawRole) => !rawRole.singing && rawRole.combinableWithSinging)
+        .flatMap((instrument) =>
+          orderedRoles
+            .filter((role) => role.singing)
+            .map((role) => [role.id, instrument.id])
+        );
+
+  const combinations: Array<[RoleId, RoleId]> = [];
+  for (const pair of requested) {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      !position.has(pair[0]) ||
+      !position.has(pair[1]) ||
+      pair[0] === pair[1]
+    )
+      return { error: "Ungültige Kombination" };
+    // Canonical order: the role that comes first in the plan first.
+    const sorted = [...pair].sort(
+      (x, y) => position.get(x)! - position.get(y)!
+    ) as [RoleId, RoleId];
+    if (
+      !combinations.some(
+        ([first, second]) => first === sorted[0] && second === sorted[1]
+      )
+    )
+      combinations.push(sorted);
+  }
+  combinations.sort(
+    (x, y) =>
+      position.get(x[0])! - position.get(y[0])! ||
+      position.get(x[1])! - position.get(y[1])!
+  );
+
+  return { config: { roles: orderedRoles, combinations } };
 }
 
 // Doodles created before the lineup became configurable have no stored

@@ -11,9 +11,10 @@ manuell angepasst und als PDF exportiert werden kann.
 - **Besetzung konfigurierbar:** Standard ist 1 Worship Leader, 4 Vocals,
   1 Bass, 1-2 E-Gitarre, 0-1 A-Gitarre, 1 Drums, 1 Keys. Über «Bearbeiten»
   lassen sich Rollen umbenennen, hinzufügen und entfernen, die Anzahl pro
-  Celebration (Mindest- und Höchstanzahl) festlegen, bestimmen, welche
-  Rollen MD sein können und welche Instrumente gleichzeitig mit einer
-  Gesangsrolle gespielt werden dürfen (z.B. A-Gitarre oder E-Gitarre)
+  Celebration (Mindest- und Höchstanzahl) festlegen und bestimmen, welche
+  Rollen MD sein können. Unter «Kombinationen» wird pro Rollenpaar
+  festgelegt, was dieselbe Person am gleichen Termin zusammen übernehmen
+  darf (z.B. Vocals + Drums, aber nicht Worship Leader + Drums)
 - **Teilnehmer-Link:** Name, Rollen aus der konfigurierten Besetzung,
   optional MD und pro Datum Ja / Vielleicht / Nein
 - **Automatischer Plan** beim Schliessen nach der konfigurierten Besetzung,
