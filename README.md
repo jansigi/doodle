@@ -49,7 +49,14 @@ manuell angepasst und als PDF exportiert werden kann.
 2. Projekt auf [vercel.com](https://vercel.com) importieren.
 3. Die beiden Umgebungsvariablen `SUPABASE_URL` und
    `SUPABASE_SERVICE_ROLE_KEY` in den Vercel-Projekteinstellungen setzen.
+   Optional `CRON_SECRET` (zufälliger String, mindestens 16 Zeichen), damit
+   nur Vercel den Keep-Alive-Endpunkt aufrufen kann.
 4. Deployen – fertig.
+
+Supabase pausiert Gratis-Projekte nach einer Woche ohne Datenbank-Anfragen.
+Damit das zwischen den Semestern nicht passiert, rufen drei tägliche Vercel
+Cron Jobs (`vercel.json`) den Endpunkt `/api/keep-alive` auf, der eine
+kleine Abfrage macht. Die Cron Jobs laufen nur auf dem Production-Deployment.
 
 ## Ablauf
 
