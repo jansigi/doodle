@@ -603,9 +603,18 @@ export default function ParticipantPage() {
         </div>
       )}
 
-      {/* Stays reachable while scrolling through a long semester. Full width
-          on phones, a floating bar on larger screens. */}
-      <div className="sticky bottom-0 z-bar -mx-4 mt-8 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:bottom-4 sm:mx-0 sm:rounded-xl sm:border sm:pb-3 sm:shadow-popover">
+      {/* Stays reachable while scrolling through a long semester. Fixed to
+          the bottom edge on phones: iOS keeps a sticky bar where the bottom
+          edge was before its toolbars collapsed, so page content showed
+          below it. The spacer takes the bar's place at the end of the page.
+          On larger screens a floating bar that sticks within the page. */}
+      <div
+        aria-hidden
+        className="mt-8 border-t border-transparent pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:hidden"
+      >
+        <div className="h-11" />
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-bar border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:sticky sm:inset-x-auto sm:bottom-4 sm:mt-8 sm:rounded-xl sm:border sm:pb-3 sm:shadow-popover">
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1 text-sm" aria-live="polite">
             {error ? (
@@ -619,22 +628,12 @@ export default function ParticipantPage() {
                 Gespeichert. Du kannst es jederzeit ändern.
               </p>
             ) : (
-              <div className="flex items-center gap-3">
-                <span className="tabular-nums text-slate-600">
-                  <span className="font-medium text-slate-900">
-                    {answeredCount}
-                  </span>{" "}
-                  von {doodle.dates.length} beantwortet
-                </span>
-                <span className="hidden h-1.5 w-24 overflow-hidden rounded-full bg-slate-100 sm:block">
-                  <span
-                    className="block h-full rounded-full bg-indigo-600 transition-[width] duration-300 ease-out-quart"
-                    style={{
-                      width: `${(answeredCount / Math.max(1, doodle.dates.length)) * 100}%`,
-                    }}
-                  />
-                </span>
-              </div>
+              <p className="tabular-nums text-slate-600">
+                <span className="font-medium text-slate-900">
+                  {answeredCount}
+                </span>{" "}
+                von {doodle.dates.length} beantwortet
+              </p>
             )}
           </div>
           <button

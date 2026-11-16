@@ -3,6 +3,7 @@ import { customAlphabet } from "nanoid";
 import bcrypt from "bcryptjs";
 import { createServerSupabase } from "@/lib/supabase";
 import { DEFAULT_LINEUP, parseLineupConfig } from "@/lib/roles";
+import { parseDates } from "@/lib/dates";
 
 const generateId = customAlphabet(
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -12,7 +13,7 @@ const generateId = customAlphabet(
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const title: string = (body.title ?? "").trim();
-  const dates: string[] = Array.isArray(body.dates) ? body.dates : [];
+  const parsedDates = parseDates(body.dates);
   const password: string = body.password ?? "";
   // Without a config the doodle gets the default lineup.
   const parsedConfig =
@@ -22,11 +23,8 @@ export async function POST(request: NextRequest) {
 
   if (!title)
     return NextResponse.json({ error: "Titel fehlt" }, { status: 400 });
-  if (dates.length === 0)
-    return NextResponse.json(
-      { error: "Mindestens ein Datum angeben" },
-      { status: 400 }
-    );
+  if ("error" in parsedDates)
+    return NextResponse.json({ error: parsedDates.error }, { status: 400 });
   if (password.length < 4)
     return NextResponse.json(
       { error: "Passwort muss mindestens 4 Zeichen haben" },
@@ -38,14 +36,13 @@ export async function POST(request: NextRequest) {
   const supabase = createServerSupabase();
   const id = generateId();
   const passwordHash = await bcrypt.hash(password, 10);
-  const sortedDates = [...new Set(dates)].sort();
 
   const { error } = await supabase.from("doodles").insert({
     id,
     title,
     password_hash: passwordHash,
     status: "open",
-    dates: sortedDates,
+    dates: parsedDates.dates,
     config: parsedConfig.config,
   });
   if (error)

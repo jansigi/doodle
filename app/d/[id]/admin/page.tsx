@@ -50,6 +50,7 @@ import {
   panelId,
   tabId,
 } from "../../../ui";
+import { DateAdder, DateList } from "../../../date-editor";
 
 interface AdminParticipant {
   name: string;
@@ -67,6 +68,11 @@ interface AdminDoodle {
   config: LineupConfig;
   plan: Plan | null;
   warnings: string[] | null;
+}
+
+interface AdminResponse {
+  doodle: AdminDoodle;
+  participants: AdminParticipant[];
 }
 
 // Sentinel option value that opens a free-text prompt (guests etc.).
@@ -109,6 +115,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("plan");
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [editingDates, setEditingDates] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [undoSnapshot, setUndoSnapshot] = useState<{ plan: Plan } | null>(
     null
@@ -145,7 +152,7 @@ export default function AdminPage() {
     action: string,
     passwordOverride?: string,
     extra?: Record<string, unknown>
-  ): Promise<boolean> {
+  ): Promise<AdminResponse | null> {
     setError(null);
     setBusyAction(action);
     const usedPassword = passwordOverride ?? password;
@@ -160,14 +167,14 @@ export default function AdminPage() {
       setError(result.error ?? "Unbekannter Fehler");
       if (response.status === 401)
         sessionStorage.removeItem(`doodle-admin-${id}`);
-      return false;
+      return null;
     }
     sessionStorage.setItem(`doodle-admin-${id}`, usedPassword);
     setLoggedIn(true);
     setDoodle(result.doodle);
     setParticipants(result.participants);
     setPlan(result.doodle.plan);
-    return true;
+    return result;
   }
 
   async function handleSaveConfirm() {
@@ -191,6 +198,27 @@ export default function AdminPage() {
     setUndoSnapshot(null);
     // The hints belonging to the restored plan are derived server-side.
     await callAdmin("updatePlan", undefined, { plan: previousPlan });
+  }
+
+  async function handleSaveDates(dates: string[]) {
+    const editedPlan = plan;
+    const result = await callAdmin("updateDates", undefined, { dates });
+    if (!result) return;
+    setEditingDates(false);
+    // The undo of a regeneration would bring back the plan of the old dates.
+    setUndoSnapshot(null);
+    // Unsaved edits in the plan survive: the remaining dates keep their
+    // edited version, removed dates drop out, new ones start empty.
+    const savedPlan = result.doodle.plan;
+    if (editedPlan && savedPlan)
+      setPlan(
+        Object.fromEntries(
+          result.doodle.dates.map((date) => [
+            date,
+            editedPlan[date] ?? savedPlan[date],
+          ])
+        )
+      );
   }
 
   function updateAssignment(date: string, updated: DateAssignment) {
@@ -306,6 +334,21 @@ export default function AdminPage() {
             <span className="flex items-center gap-1.5">
               <CalendarDays className="h-4 w-4 text-slate-500" aria-hidden />
               {plural(doodle.dates.length, "Termin", "Termine")}
+              <span className="text-slate-400" aria-hidden>
+                ·
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setEditingDates(true);
+                }}
+                disabled={busy}
+                aria-label="Termine bearbeiten"
+                className="link disabled:pointer-events-none disabled:opacity-50"
+              >
+                Bearbeiten
+              </button>
             </span>
           </div>
         </div>
@@ -505,6 +548,22 @@ export default function AdminPage() {
         />
       )}
 
+      {editingDates && (
+        <DatesEditorDialog
+          savedDates={doodle.dates}
+          status={doodle.status}
+          plan={doodle.plan}
+          participantCount={participants.length}
+          busy={busyAction === "updateDates"}
+          error={error}
+          onCancel={() => {
+            setEditingDates(false);
+            setError(null);
+          }}
+          onSave={handleSaveDates}
+        />
+      )}
+
       {showSaveConfirm && (
         <SaveConfirmDialog
           changes={planChanges}
@@ -593,6 +652,149 @@ function SaveConfirmDialog({
           Abbrechen
         </button>
         <button type="button" onClick={onConfirm} className="btn btn-success">
+          Speichern
+        </button>
+      </DialogFooter>
+    </Dialog>
+  );
+}
+
+function hasAssignment(assignment: DateAssignment | undefined): boolean {
+  if (!assignment) return false;
+  return (
+    assignment.md !== null ||
+    Object.values(assignment.slots).some((names) => names.length > 0)
+  );
+}
+
+// Adds or removes celebrations after the doodle was created. Nothing is
+// stored before «Speichern», and the notes say what the change means for the
+// plan and the answers of the band.
+function DatesEditorDialog({
+  savedDates,
+  status,
+  plan,
+  participantCount,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  savedDates: string[];
+  status: "open" | "closed";
+  // The stored plan, to name the assignments a removal deletes.
+  plan: Plan | null;
+  participantCount: number;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (dates: string[]) => void;
+}) {
+  const [dates, setDates] = useState(savedDates);
+  const added = dates.filter((date) => !savedDates.includes(date));
+  const removed = savedDates.filter((date) => !dates.includes(date));
+  const removedAssigned = removed.filter((date) => hasAssignment(plan?.[date]));
+  const changed = added.length > 0 || removed.length > 0;
+
+  function addDates(newDates: string[]) {
+    setDates((current) => [...new Set([...current, ...newDates])].sort());
+  }
+
+  const notes: string[] = [];
+  if (added.length > 0) {
+    if (status === "closed")
+      notes.push(
+        "Das Doodle ist geschlossen. Öffne es wieder, damit die Band neue Termine beantworten kann."
+      );
+    else if (participantCount > 0)
+      notes.push(
+        "Wer schon eingetragen ist, hat für neue Termine noch keine Antwort und muss den Eintrag ergänzen."
+      );
+    if (plan)
+      notes.push(
+        "Im Plan bleiben neue Termine leer, bis du sie von Hand besetzt oder den Plan neu generierst."
+      );
+  }
+
+  const summary =
+    dates.length === 0
+      ? "Mindestens ein Termin muss bleiben"
+      : !changed
+        ? "Keine Änderungen"
+        : [
+            added.length > 0 && `${added.length} neu`,
+            removed.length > 0 && `${removed.length} entfernt`,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+
+  return (
+    <Dialog labelledBy="dates-editor-title" size="md" onClose={onCancel}>
+      <DialogHeader
+        id="dates-editor-title"
+        title="Termine bearbeiten"
+        description="Füge Celebrations hinzu oder entferne sie. Alle anderen Termine behalten ihre Antworten und ihre Einteilung im Plan."
+        onClose={onCancel}
+      />
+      <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="space-y-5">
+          <DateAdder onAdd={addDates} />
+          <DateList
+            dates={dates}
+            savedDates={savedDates}
+            onRemove={(date) =>
+              setDates((current) =>
+                current.filter((existing) => existing !== date)
+              )
+            }
+            onRestore={(date) => addDates([date])}
+          />
+        </div>
+        {/* Always rendered, so screen readers announce a note as it appears.
+            Empty, it takes no space. */}
+        <div aria-live="polite" className="space-y-2 [&:not(:empty)]:mt-5">
+          {removedAssigned.length > 0 && (
+            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-900">
+              <TriangleAlert
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-700"
+                aria-hidden
+              />
+              {removedAssigned.length === 1
+                ? `Am ${formatDateGerman(removedAssigned[0]).slice(0, -5)} ist im Plan schon jemand eingeteilt. Diese Einteilung wird mit dem Termin gelöscht.`
+                : `An ${removedAssigned.length} entfernten Terminen ist im Plan schon jemand eingeteilt. Diese Einteilungen werden mit den Terminen gelöscht.`}
+            </p>
+          )}
+          {notes.map((note) => (
+            <p key={note} className="text-sm leading-relaxed text-slate-600">
+              {note}
+            </p>
+          ))}
+        </div>
+      </div>
+      <DialogFooter>
+        {error ? (
+          <p
+            role="alert"
+            className="mr-auto flex items-start gap-1.5 text-sm text-red-700"
+          >
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            {error}
+          </p>
+        ) : (
+          <p className="mr-auto text-sm tabular-nums text-slate-600">
+            {summary}
+          </p>
+        )}
+        <button type="button" onClick={onCancel} className="btn btn-secondary">
+          Abbrechen
+        </button>
+        <button
+          type="button"
+          onClick={() => onSave(dates)}
+          disabled={!changed || dates.length === 0 || busy}
+          className="btn btn-primary"
+        >
+          {busy && <LoaderCircle className="animate-spin" aria-hidden />}
           Speichern
         </button>
       </DialogFooter>
