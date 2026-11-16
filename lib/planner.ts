@@ -282,6 +282,19 @@ export function collectPlanWarnings(
   return warnings.sort();
 }
 
+// Fits a plan to a changed list of dates: assignments of the remaining dates
+// stay as they are, removed dates drop out and new dates start empty, ready
+// to be filled by hand or by regenerating the plan.
+export function planForDates(
+  plan: Plan,
+  dates: string[],
+  config: LineupConfig
+): Plan {
+  return Object.fromEntries(
+    dates.map((date) => [date, plan[date] ?? emptyDateAssignment(config)])
+  );
+}
+
 export function generatePlan(
   dates: string[],
   participants: Participant[],

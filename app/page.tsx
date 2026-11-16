@@ -3,96 +3,31 @@
 import { useState } from "react";
 import {
   ArrowRight,
-  CalendarDays,
   Check,
   Copy,
   ExternalLink,
   LoaderCircle,
   Lock,
-  Plus,
   TriangleAlert,
-  X,
 } from "lucide-react";
 import type { LineupConfig } from "@/lib/types";
-import { DEFAULT_LINEUP, formatDateGerman } from "@/lib/roles";
+import { DEFAULT_LINEUP } from "@/lib/roles";
+import { DateAdder, DateList } from "./date-editor";
 import { LineupEditorDialog, LineupSummary } from "./lineup-editor";
 import { FormSection } from "./ui";
-
-// Index matches JavaScript's Date.getDay() (0 = Sonntag).
-const WEEKDAYS = [
-  "Sonntag",
-  "Montag",
-  "Dienstag",
-  "Mittwoch",
-  "Donnerstag",
-  "Freitag",
-  "Samstag",
-];
-
-function toIsoDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
-function groupByMonth(
-  dates: string[]
-): Array<{ key: string; label: string; dates: string[] }> {
-  const groups: Array<{ key: string; label: string; dates: string[] }> = [];
-  [...dates].sort().forEach((date) => {
-    const key = date.slice(0, 7);
-    const last = groups[groups.length - 1];
-    if (last?.key === key) {
-      last.dates.push(date);
-      return;
-    }
-    groups.push({
-      key,
-      label: new Date(date + "T00:00:00").toLocaleDateString("de-CH", {
-        month: "long",
-        year: "numeric",
-      }),
-      dates: [date],
-    });
-  });
-  return groups;
-}
 
 export default function CreateDoodlePage() {
   const [title, setTitle] = useState("");
   const [password, setPassword] = useState("");
-  const [dateInput, setDateInput] = useState("");
   const [dates, setDates] = useState<string[]>([]);
-  const [weekday, setWeekday] = useState(0); // 0 = Sonntag (JS getDay)
-  const [rangeStart, setRangeStart] = useState("");
-  const [rangeEnd, setRangeEnd] = useState("");
   const [config, setConfig] = useState<LineupConfig>(DEFAULT_LINEUP);
   const [editingLineup, setEditingLineup] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
 
-  function addDate() {
-    if (!dateInput || dates.includes(dateInput)) return;
-    setDates([...dates, dateInput].sort());
-    setDateInput("");
-  }
-
-  function addWeeklyDates() {
-    if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) return;
-    const start = new Date(rangeStart + "T00:00:00");
-    const end = new Date(rangeEnd + "T00:00:00");
-    const daysUntilWeekday = (weekday - start.getDay() + 7) % 7;
-    const first = new Date(start);
-    first.setDate(start.getDate() + daysUntilWeekday);
-    const weekCount =
-      Math.floor((end.getTime() - first.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
-    const generated = Array.from({ length: Math.max(0, weekCount) }, (_, week) => {
-      const date = new Date(first);
-      date.setDate(first.getDate() + week * 7);
-      return toIsoDate(date);
-    });
-    setDates([...new Set([...dates, ...generated])].sort());
+  function addDates(added: string[]) {
+    setDates((current) => [...new Set([...current, ...added])].sort());
   }
 
   async function createDoodle() {
@@ -146,8 +81,6 @@ export default function CreateDoodlePage() {
     );
   }
 
-  const weeklyRangeValid = Boolean(rangeStart && rangeEnd && rangeEnd >= rangeStart);
-
   return (
     <div className="mx-auto max-w-4xl">
       <div className="border-b border-slate-200 pb-8">
@@ -196,77 +129,7 @@ export default function CreateDoodlePage() {
         title="Termine"
         description="Alle Celebrations des Semesters, wöchentlich für einen Zeitraum oder einzeln."
       >
-        <div className="card divide-y divide-slate-100">
-          <div className="space-y-3 p-4">
-            <p className="text-sm font-medium text-slate-900">Wöchentlich</p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <label className="col-span-2 block space-y-1.5 sm:col-span-1">
-                <span className="text-xs font-medium text-slate-600">
-                  Wochentag
-                </span>
-                <select
-                  className="select"
-                  value={weekday}
-                  onChange={(event) => setWeekday(Number(event.target.value))}
-                >
-                  {WEEKDAYS.map((label, index) => (
-                    <option key={label} value={index}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-slate-600">Von</span>
-                <input
-                  type="date"
-                  className="input"
-                  value={rangeStart}
-                  onChange={(event) => setRangeStart(event.target.value)}
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-slate-600">Bis</span>
-                <input
-                  type="date"
-                  className="input"
-                  value={rangeEnd}
-                  onChange={(event) => setRangeEnd(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={addWeeklyDates}
-                disabled={!weeklyRangeValid}
-                className="btn btn-secondary col-span-2 h-11 sm:col-span-3 sm:h-9 sm:justify-self-start"
-              >
-                <Plus aria-hidden />
-                Wöchentliche Termine hinzufügen
-              </button>
-            </div>
-          </div>
-          <div className="space-y-3 p-4">
-            <p className="text-sm font-medium text-slate-900">Einzelnes Datum</p>
-            <div className="flex gap-3">
-              <input
-                type="date"
-                aria-label="Datum"
-                className="input flex-1 sm:w-48 sm:flex-none"
-                value={dateInput}
-                onChange={(event) => setDateInput(event.target.value)}
-              />
-              <button
-                type="button"
-                onClick={addDate}
-                disabled={!dateInput}
-                className="btn btn-secondary h-11 sm:h-9"
-              >
-                <Plus aria-hidden />
-                Hinzufügen
-              </button>
-            </div>
-          </div>
-        </div>
+        <DateAdder onAdd={addDates} />
         <DateList
           dates={dates}
           onRemove={(date) =>
@@ -326,61 +189,6 @@ export default function CreateDoodlePage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function DateList({
-  dates,
-  onRemove,
-}: {
-  dates: string[];
-  onRemove: (date: string) => void;
-}) {
-  if (dates.length === 0)
-    return (
-      <div className="flex flex-col items-center rounded-lg border border-dashed border-slate-300 px-4 py-7 text-center">
-        <CalendarDays className="h-5 w-5 text-slate-500" aria-hidden />
-        <p className="mt-2 text-sm font-medium text-slate-800">
-          Noch keine Termine
-        </p>
-        <p className="mt-0.5 text-sm text-slate-600">
-          Füge oben einen Zeitraum oder ein einzelnes Datum hinzu.
-        </p>
-      </div>
-    );
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-slate-600">
-        <span className="font-medium tabular-nums text-slate-900">
-          {dates.length}
-        </span>{" "}
-        {dates.length === 1 ? "Termin" : "Termine"}
-      </p>
-      {groupByMonth(dates).map((month) => (
-        <div key={month.key} className="space-y-2">
-          <p className="text-xs font-medium text-slate-500">{month.label}</p>
-          <ul className="flex flex-wrap gap-2">
-            {month.dates.map((date) => (
-              <li
-                key={date}
-                className="inline-flex h-8 animate-pop-in items-center gap-0.5 rounded-md border border-slate-200 bg-white pl-2.5 pr-0.5 text-sm tabular-nums text-slate-800 shadow-xs"
-              >
-                {formatDateGerman(date).slice(0, -5)}
-                <button
-                  type="button"
-                  onClick={() => onRemove(date)}
-                  aria-label={`${formatDateGerman(date)} entfernen`}
-                  className="grid h-7 w-7 place-items-center rounded text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
     </div>
   );
 }
