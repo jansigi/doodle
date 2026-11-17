@@ -23,8 +23,9 @@ manuell angepasst und als PDF exportiert werden kann.
   hintereinander; «Vielleicht» wird nur genutzt wenn nötig
 - **Warnungen,** wo die Ziel-Besetzung nicht erreicht werden kann
 - **Plan-Editor** für manuelle Anpassungen, Wieder-Öffnen und Neu-Generieren
-- **Termine nachträglich ändern** im Admin-Bereich: Entfernte Termine fallen
-  samt Einteilung aus dem Plan, neue Termine starten im Plan leer
+- **Titel und Termine nachträglich ändern** im Admin-Bereich: Entfernte
+  Termine fallen samt Einteilung aus dem Plan, neue Termine starten im Plan
+  leer
 - **PDF-Export** als Quer-Tabelle (Datum × Rollen)
 
 ## Setup

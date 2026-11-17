@@ -18,6 +18,7 @@ type AdminAction =
   | "regenerate"
   | "updatePlan"
   | "updateDates"
+  | "updateTitle"
   | "deleteParticipant";
 
 export async function POST(
@@ -72,7 +73,12 @@ export async function POST(
 
   const updates: Record<string, unknown> = {};
 
-  if (action === "updateDates") {
+  if (action === "updateTitle") {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title)
+      return NextResponse.json({ error: "Titel fehlt" }, { status: 400 });
+    updates.title = title;
+  } else if (action === "updateDates") {
     const parsed = parseDates(body.dates);
     if ("error" in parsed)
       return NextResponse.json({ error: parsed.error }, { status: 400 });
@@ -143,7 +149,7 @@ export async function POST(
   return NextResponse.json({
     doodle: {
       id: doodle.id,
-      title: doodle.title,
+      title: (updates.title as string) ?? doodle.title,
       status: (updates.status as string) ?? doodle.status,
       dates,
       config,

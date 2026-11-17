@@ -116,6 +116,7 @@ export default function AdminPage() {
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [editingDates, setEditingDates] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [undoSnapshot, setUndoSnapshot] = useState<{ plan: Plan } | null>(
     null
@@ -200,15 +201,10 @@ export default function AdminPage() {
     await callAdmin("updatePlan", undefined, { plan: previousPlan });
   }
 
-  async function handleSaveDates(dates: string[]) {
-    const editedPlan = plan;
-    const result = await callAdmin("updateDates", undefined, { dates });
-    if (!result) return;
-    setEditingDates(false);
-    // The undo of a regeneration would bring back the plan of the old dates.
-    setUndoSnapshot(null);
-    // Unsaved edits in the plan survive: the remaining dates keep their
-    // edited version, removed dates drop out, new ones start empty.
+  // Unsaved edits in the plan survive a change of the dates or the title:
+  // the remaining dates keep their edited version, removed dates drop out,
+  // new ones start empty.
+  function keepPlanEdits(editedPlan: Plan | null, result: AdminResponse) {
     const savedPlan = result.doodle.plan;
     if (editedPlan && savedPlan)
       setPlan(
@@ -219,6 +215,24 @@ export default function AdminPage() {
           ])
         )
       );
+  }
+
+  async function handleSaveDates(dates: string[]) {
+    const editedPlan = plan;
+    const result = await callAdmin("updateDates", undefined, { dates });
+    if (!result) return;
+    setEditingDates(false);
+    // The undo of a regeneration would bring back the plan of the old dates.
+    setUndoSnapshot(null);
+    keepPlanEdits(editedPlan, result);
+  }
+
+  async function handleSaveTitle(title: string) {
+    const editedPlan = plan;
+    const result = await callAdmin("updateTitle", undefined, { title });
+    if (!result) return;
+    setEditingTitle(false);
+    keepPlanEdits(editedPlan, result);
   }
 
   function updateAssignment(date: string, updated: DateAssignment) {
@@ -312,9 +326,24 @@ export default function AdminPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {doodle.title}
-          </h1>
+          <div className="flex items-start gap-1">
+            <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight">
+              {doodle.title}
+            </h1>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setEditingTitle(true);
+              }}
+              disabled={busy}
+              aria-label="Titel ändern"
+              title="Titel ändern"
+              className="btn btn-ghost btn-icon shrink-0 text-slate-400"
+            >
+              <Pencil aria-hidden />
+            </button>
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-slate-600">
             {doodle.status === "open" ? (
               <span className="badge badge-green">
@@ -564,6 +593,19 @@ export default function AdminPage() {
         />
       )}
 
+      {editingTitle && (
+        <TitleEditorDialog
+          savedTitle={doodle.title}
+          busy={busyAction === "updateTitle"}
+          error={error}
+          onCancel={() => {
+            setEditingTitle(false);
+            setError(null);
+          }}
+          onSave={handleSaveTitle}
+        />
+      )}
+
       {showSaveConfirm && (
         <SaveConfirmDialog
           changes={planChanges}
@@ -798,6 +840,76 @@ function DatesEditorDialog({
           Speichern
         </button>
       </DialogFooter>
+    </Dialog>
+  );
+}
+
+// Renames the doodle. Only the title changes: links, answers and the plan
+// stay as they are.
+function TitleEditorDialog({
+  savedTitle,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  savedTitle: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (title: string) => void;
+}) {
+  const [title, setTitle] = useState(savedTitle);
+  const trimmed = title.trim();
+  const canSave = trimmed !== "" && trimmed !== savedTitle && !busy;
+
+  return (
+    <Dialog labelledBy="title-editor-title" onClose={onCancel}>
+      <form
+        className="flex min-h-0 flex-col"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSave) onSave(trimmed);
+        }}
+      >
+        <DialogHeader
+          id="title-editor-title"
+          title="Titel ändern"
+          description="Die Band sieht den neuen Titel sofort. Links, Antworten und Plan bleiben gleich."
+          onClose={onCancel}
+        />
+        <div className="space-y-1.5 px-6 pb-6">
+          <label className="field-label" htmlFor="title-editor-input">
+            Titel
+          </label>
+          <input
+            id="title-editor-input"
+            className="input"
+            autoFocus
+            onFocus={(event) => event.currentTarget.select()}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </div>
+        <DialogFooter>
+          {error && (
+            <p
+              role="alert"
+              className="mr-auto flex items-start gap-1.5 text-sm text-red-700"
+            >
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              {error}
+            </p>
+          )}
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
+            Abbrechen
+          </button>
+          <button type="submit" disabled={!canSave} className="btn btn-primary">
+            {busy && <LoaderCircle className="animate-spin" aria-hidden />}
+            Speichern
+          </button>
+        </DialogFooter>
+      </form>
     </Dialog>
   );
 }
