@@ -488,14 +488,8 @@ export default function ParticipantPage() {
               checked={canMd}
               onChange={(event) => setCanMd(event.target.checked)}
             />
-            <span>
-              <span className="block text-sm font-medium text-slate-900">
-                Ich kann MD übernehmen
-              </span>
-              <span className="block text-sm text-slate-600">
-                Als Musical Director leitest du die Band musikalisch durch die
-                Celebration.
-              </span>
+            <span className="text-sm font-medium text-slate-900">
+              Ich bin MD
             </span>
           </label>
         )}
